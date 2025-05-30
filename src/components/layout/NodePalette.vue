@@ -1,103 +1,143 @@
 <template>
-  <div class="node-palette">
-    <h3>组件</h3>
-    <div v-for="(nodes, category) in categorizedNodes" :key="category" class="category-group">
-      <h4>{{ category }}</h4>
+  <div class="node-palette"><!-- Removed :class="{ collapsed: !hasActiveFlow }" as App.vue handles visibility -->
+    <h3 class="palette-title">Components</h3>
+    <div v-if="Object.keys(flowStore.categorizedNodeDefinitions).length === 0" class="empty-palette-message">
+      <p>No components available.</p>
+    </div>
+    <div v-for="(nodesInCategory, categoryName) in flowStore.categorizedNodeDefinitions" :key="categoryName" class="category-group">
+      <h4 class="category-name">{{ categoryName === 'undefined' ? 'Uncategorized' : categoryName }}</h4>
       <div
-        v-for="nodeDef in nodes"
-        :key="nodeDef.type"
+        v-for="(nodeDef, index) in nodesInCategory"
+        :key="nodeDef.type || `fallback-key-${categoryName}-${index}`" 
         class="node-item"
-        :style="{ borderColor: nodeDef.color }"
+        :style="{ borderLeftColor: nodeDef.color || '#6c757d' }"
         draggable="true"
-        @dragstart="onDragStart($event, nodeDef.type)"
+        @dragstart="onDragStart($event, nodeDef)"
       >
-        <!-- Basic icon placeholder, replace with actual icons later -->
-        <span v-if="nodeDef.icon" class="node-icon">{{ nodeDef.icon.startsWith('mdi-') ? '' : nodeDef.icon }}</span> 
-        {{ nodeDef.label }}
+        <span v-if="nodeDef.icon" class="node-icon">
+          <!-- Basic icon rendering, assuming simple text or a class name for an icon font -->
+          <i :class="nodeDef.icon" v-if="nodeDef.icon.startsWith('mdi-') || nodeDef.icon.startsWith('fa-')"></i>
+          <template v-else>{{ nodeDef.icon }}</template>
+        </span>
+        <span class="node-label">{{ nodeDef.label || 'Unnamed Node' }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from 'vue'; // Added computed for hasActiveFlow
 import { useFlowStore } from '@/stores/flow';
+import { useFlowsManagerStore } from '@/stores/flows-manager'; // Import flowsManagerStore
 import type { NodeDefinition } from '@/types/pocketflow-editor';
 
 const flowStore = useFlowStore();
+const flowsManagerStore = useFlowsManagerStore(); // Instantiate it
 
-const categorizedNodes = computed(() => {
-  const categories: Record<string, NodeDefinition[]> = {};
-  for (const type in flowStore.nodeRegistry) {
-    const nodeDef = flowStore.nodeRegistry[type];
-    if (!categories[nodeDef.category]) {
-      categories[nodeDef.category] = [];
-    }
-    categories[nodeDef.category].push(nodeDef);
-  }
-  return categories;
-});
+// Visibility is now controlled by App.vue using v-if on NodePalette itself
+// const hasActiveFlow = computed(() => flowsManagerStore.hasActiveFlow);
 
-const onDragStart = (event: DragEvent, nodeType: string) => {
-  if (event.dataTransfer) {
+const onDragStart = (event: DragEvent, nodeDef: NodeDefinition) => {
+  const nodeType = nodeDef.type;
+  const nodeLabel = nodeDef.label;
+  console.log(`NodePalette DragStart: type='${nodeType}', label='${nodeLabel}'`);
+  
+  if (event.dataTransfer && typeof nodeType === 'string' && nodeType) {
     event.dataTransfer.setData('application/pocketflow-nodetype', nodeType);
     event.dataTransfer.effectAllowed = 'copy';
+  } else {
+    console.error(`NodePalette DragStart: nodeType is invalid ('${nodeType}'). Cannot set drag data. Preventing drag.`);
+    event.preventDefault(); 
   }
 };
 </script>
 
 <style scoped>
 .node-palette {
-  width: 240px;
-  padding: 15px;
-  background-color: #f8f9fa;
-  border-right: 1px solid #dee2e6;
+  width: 180px; /* Further reduced width */
+  padding: 10px; /* Further reduced padding */
+  background-color: #fdfdff;
+  border-right: 1px solid #e0e0e0;
   box-sizing: border-box;
   overflow-y: auto;
+  transition: width 0.3s ease;
+  display: flex;
+  flex-direction: column;
 }
-.node-palette h3 {
+
+.palette-title {
   margin-top: 0;
-  margin-bottom: 15px;
-  font-size: 18px; /* Slightly larger */
-  color: #343a40;
-  text-align: center;
-}
-.category-group h4 {
-  margin-top: 15px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: #495057;
+  margin-bottom: 10px; /* Reduced margin */
+  font-size: 0.95em; /* Reduced font size */
+  color: #333;
   font-weight: 600;
-  border-bottom: 1px solid #e9ecef;
-  padding-bottom: 4px;
+  text-align: left;
+  padding-bottom: 6px; /* Reduced padding */
+  border-bottom: 1px solid #eee;
 }
+
+.category-group {
+  margin-bottom: 8px; /* Reduced margin */
+}
+
+.category-name {
+  margin-top: 0;
+  margin-bottom: 6px; /* Reduced margin */
+  font-size: 0.8em; /* Reduced font size */
+  color: #555;
+  font-weight: 500;
+  padding-left: 2px;
+}
+
 .node-item {
-  display: flex; /* For icon and text alignment */
-  align-items: center; /* For icon and text alignment */
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  background-color: #ffffff;
-  border: 1px solid #ced4da; /* Default border */
-  border-left-width: 4px; /* Colored border on the left */
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px; /* Further reduced padding */
+  margin-bottom: 4px; /* Reduced margin */
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  border-left-width: 3px;
+  border-radius: 3px;
   cursor: grab;
-  font-size: 14px;
-  transition: all 0.2s ease-in-out;
+  font-size: 0.85em; /* Reduced font size */
+  color: #454545;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 .node-item:hover {
   border-color: #007bff;
-  border-left-color: #007bff; /* Ensure hover on colored border is consistent */
-  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
-  transform: translateY(-1px);
+  border-left-color: #007bff !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  color: #000;
 }
+
 .node-icon {
-  margin-right: 8px;
-  /* Basic styling for icon, assuming Material Design Icons or similar font icons */
-  /* If using MDI, you'd typically use a class like <span class="mdi mdi-cube-outline"></span> */
-  /* For now, this is a placeholder. Actual icon rendering might need a library or specific CSS */
-  font-family: 'Material Design Icons'; /* Ensure you have MDI font linked if using names like mdi-cube */
-  font-size: 18px;
-  width: 20px; /* Fixed width for alignment */
+  margin-right: 6px; /* Reduced margin */
+  font-size: 1em; /* Slightly reduced icon size */
+  width: 16px; /* Reduced width */
   text-align: center;
+  color: #777;
+  flex-shrink: 0;
+}
+
+.node-item:hover .node-icon {
+  color: #007bff;
+}
+
+.node-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+}
+
+.empty-palette-message {
+  font-size: 0.8em; /* Reduced font size */
+  color: #777;
+  text-align: center;
+  padding: 10px 0; /* Reduced padding */
 }
 </style>

@@ -60,42 +60,73 @@ export interface NodeOutputDefinition extends NodeConnectionPoint {
 }
 
 /**
- * 定义一个节点类型（例如，对应 pocketflow.py 中的一个类）
+ * Defines the parameters for constructing a base node/flow definition.
  */
-export interface NodeDefinition {
-  type: string; // 节点的唯一类型标识符, e.g., "pf.Node", "pf.CustomAsyncNode"
-  label: string; // 在组件选择面板中显示的名称
-  description?: string; // 节点类型的描述
-  pocketflowClass: string; // 对应的 pocketflow.py 中的 Python 类名
-  defaultParams: Record<string, any>; // 创建节点时的默认参数
-  paramSchema: Record<string, ParamSchemaItem>; // 参数的结构定义，用于生成属性面板
-
-  // 视觉和分类
-  icon?: string; // 节点的图标 (e.g., Material Design Icon name, SVG string, or image URL)
-  color?: string; // 节点的默认主题颜色 (e.g., for node background or border)
-  category: string; // 节点在组件选择面板中的分类 (e.g., "Core", "Async", "Data Processing", "Custom")
-  defaultSize?: { width: number; height: number }; // 节点的默认尺寸
-
-  // 定义节点的输入连接点
+export interface BaseDefinitionParams {
+  type: string;
+  label: string;
+  pocketflowClass: string;
+  category: string;
+  description?: string;
+  defaultParams?: Record<string, any>; 
+  paramSchema?: Record<string, ParamSchemaItem>;
+  icon?: string;
+  color?: string;
+  defaultSize?: { width: number; height: number };
   inputs?: NodeInputDefinition[];
-
-  // 定义节点的输出连接点 (replaces the old outputActions)
-  // The 'id' in NodeOutputDefinition will be used by FlowEdge.sourceOutputId
   outputs?: NodeOutputDefinition[];
+  supportsCodeEditing?: boolean;
+  codeBlocksDefinition?: CodeBlockDefinition[];
+  isContainer?: boolean; // Added for flows primarily
+}
 
-  // Code editing capabilities
-  supportsCodeEditing?: boolean; // Whether this node type supports inline code editing
-  codeBlocksDefinition?: CodeBlockDefinition[]; // Defines editable code blocks for this node type
+// Import all concrete node and flow definitions using relative paths
+import { PfNodeDefinition } from './definitions/nodes/PfNodeDefinition';
+import { PfAsyncNodeDefinition } from './definitions/nodes/PfAsyncNodeDefinition';
+import { PfBatchNodeDefinition } from './definitions/nodes/PfBatchNodeDefinition';
+import { PfAsyncBatchNodeDefinition } from './definitions/nodes/PfAsyncBatchNodeDefinition';
+import { PfAsyncParallelBatchNodeDefinition } from './definitions/nodes/PfAsyncParallelBatchNodeDefinition';
 
-  // OLD outputActions - to be removed or mapped from 'outputs'
-  // outputActions: Array<{
-  //   id: string;
-  //   label: string;
-  //   description?: string;
-  // }>;
+import { PfFlowDefinition } from './definitions/flows/PfFlowDefinition';
+import { PfBatchFlowDefinition } from './definitions/flows/PfBatchFlowDefinition';
+import { PfAsyncFlowDefinition } from './definitions/flows/PfAsyncFlowDefinition';
+import { PfAsyncBatchFlowDefinition } from './definitions/flows/PfAsyncBatchFlowDefinition';
+import { PfAsyncParallelBatchFlowDefinition } from './definitions/flows/PfAsyncParallelBatchFlowDefinition';
 
-  // 可选：定义节点的输入连接点 (如果需要更明确的控制)
-  // inputHandles?: Array<{ id: string; label: string; description?: string; allowedSourceNodeTypes?: string[]; allowedSourceActions?: string[]; }>;
+/**
+ * Union type for all possible node and flow definitions.
+ * This replaces the old NodeDefinition interface.
+ */
+export type NodeDefinition =
+  | PfNodeDefinition
+  | PfAsyncNodeDefinition
+  | PfBatchNodeDefinition
+  | PfAsyncBatchNodeDefinition
+  | PfAsyncParallelBatchNodeDefinition
+  | PfFlowDefinition
+  | PfBatchFlowDefinition
+  | PfAsyncFlowDefinition
+  | PfAsyncBatchFlowDefinition
+  | PfAsyncParallelBatchFlowDefinition;
+
+/**
+ * Represents metadata for a flow in the list of manageable flows.
+ */
+export interface FlowListItem {
+  id: string;
+  name: string;
+  description: string;
+  flowType: string; // Corresponds to a type in NodeDefinition that is a flow (e.g., 'PfFlowDefinition')
+  createdAt: string; // ISO date string
+  updatedAt: string; // ISO date string
+}
+
+/**
+ * Defines the structure for the flows manager store state.
+ */
+export interface FlowsManagerState {
+  flows: FlowListItem[];
+  activeFlowId: string | null;
 }
 
 /**
@@ -169,6 +200,7 @@ export interface FlowState {
   name?: string; // 流程图的名称
   description?: string; // 流程图的描述
   version?: string; // 版本号
+  flowType?: string; // Added to store the type of the current flow
 
   nodes: FlowNode[];
   edges: FlowEdge[];

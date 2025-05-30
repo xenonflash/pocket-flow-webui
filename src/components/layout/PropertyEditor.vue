@@ -82,6 +82,7 @@ const closeCodeEditor = () => {
 };
 
 const handleSaveCodeBlock = (blockName: string, newCode: string) => {
+  console.log(`[PropertyEditor] handleSaveCodeBlock called. Node ID: ${selectedNode.value?.id}, Block Name: ${blockName}, New Code: ${newCode}`);
   if (selectedNode.value && blockName) {
     flowStore.updateNodeCodeBlock(selectedNode.value.id, blockName, newCode);
   }
@@ -164,8 +165,13 @@ watch(selectedNode, (newNode, oldNode) => {
       }
     }
     formData.value = newFormData;
+    console.log(`[PropertyEditor] Selected node changed or initialized. Node ID: ${newNode?.id}. formData initialized:`, JSON.parse(JSON.stringify(newFormData)));
+    if (newNode?.codeBlocks) {
+      console.log(`[PropertyEditor] Current codeBlocks for node ${newNode.id}:`, JSON.parse(JSON.stringify(newNode.codeBlocks)));
+    }
   } else if (!newNode) {
     formData.value = {}; 
+    console.log("[PropertyEditor] No node selected. formData cleared.");
   }
 }, { immediate: true, deep: true });
 

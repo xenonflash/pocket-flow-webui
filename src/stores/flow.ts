@@ -1,140 +1,34 @@
 import { defineStore } from 'pinia';
-import type { FlowState, NodeDefinition, FlowNode, FlowEdge, NodeRegistry, ParamSchemaItem } from '@/types/pocketflow-editor';
-import { ref, computed, watch, nextTick } from 'vue'; // Added watch and nextTick
+// Ensure NodeRegistry is imported, it now uses the union type NodeDefinition
+import type { FlowState, FlowNode, FlowEdge, NodeRegistry, ParamSchemaItem, NodeDefinition, CodeBlockDefinition, NodeOutputDefinition } from '@/types/pocketflow-editor'; // Added CodeBlockDefinition, NodeOutputDefinition
+import { ref, computed, watch, nextTick } from 'vue';
 
-// Helper to generate unique IDs
-function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // Fallback for environments without crypto.randomUUID
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
+// Import all concrete definition classes
+import { PfNodeDefinition } from '@/types/definitions/nodes/PfNodeDefinition';
+import { PfAsyncNodeDefinition } from '@/types/definitions/nodes/PfAsyncNodeDefinition';
+import { PfBatchNodeDefinition } from '@/types/definitions/nodes/PfBatchNodeDefinition';
+import { PfAsyncBatchNodeDefinition } from '@/types/definitions/nodes/PfAsyncBatchNodeDefinition';
+import { PfAsyncParallelBatchNodeDefinition } from '@/types/definitions/nodes/PfAsyncParallelBatchNodeDefinition';
+import { PfFlowDefinition } from '@/types/definitions/flows/PfFlowDefinition';
+import { PfBatchFlowDefinition } from '@/types/definitions/flows/PfBatchFlowDefinition';
+import { PfAsyncFlowDefinition } from '@/types/definitions/flows/PfAsyncFlowDefinition';
+import { PfAsyncBatchFlowDefinition } from '@/types/definitions/flows/PfAsyncBatchFlowDefinition';
+import { PfAsyncParallelBatchFlowDefinition } from '@/types/definitions/flows/PfAsyncParallelBatchFlowDefinition';
 
 // --- Initial Node Registry ---
+// Replace plain objects with new class instances
 const initialNodeRegistry: NodeRegistry = {
-  'pf.Node': {
-    type: 'pf.Node',
-    label: '基础节点 (Node)',
-    pocketflowClass: 'pf.Node',
-    description: 'PocketFlow 中的基础同步节点。',
-    defaultParams: { name: 'node' }, // Removed inputs/outputs from defaultParams as they are not standard params
-    paramSchema: {
-      name: { type: 'string', label: '名称', defaultValue: 'node', required: true, description: '节点的唯一名称。' },
-      // inputs: { type: 'json', label: '输入 (Inputs)', defaultValue: [], description: '节点的输入参数名列表。' }, // Example, might be handled differently
-      // outputs: { type: 'json', label: '输出 (Outputs)', defaultValue: [], description: '节点的输出参数名列表。' }, // Example, might be handled differently
-      max_retries: { type: 'number', label: '最大重试次数', defaultValue: 1, validation: { min: 0 }, description: '执行失败时的最大重试次数。' },
-      wait: { type: 'number', label: '重试等待时间 (秒)', defaultValue: 0, validation: { min: 0 }, description: '每次重试之间的等待时间。' },
-    },
-    icon: 'mdi-cube-outline',
-    color: '#4CAF50', // Green
-    category: '核心',
-    defaultSize: { width: 200, height: 120 }, // Adjusted size
-    supportsCodeEditing: true,
-    codeBlocksDefinition: [
-      {
-        name: 'prep',
-        label: '准备脚本 (prep)',
-        language: 'python',
-        defaultCode: '# prep(self, shared_data)\n# 在 exec 之前运行，用于准备数据\n# 返回值将传递给 exec\npass',
-        description: '准备阶段执行的 Python 代码。'
-      },
-      {
-        name: 'exec',
-        label: '执行脚本 (exec)',
-        language: 'python',
-        defaultCode: '# exec(self, prep_result)\n# 核心执行逻辑\n# 返回值将传递给 post\nprint(f"Executing {self.params.get(\'name\', \'Node\')} with prep_result: {prep_result}")\nreturn prep_result',
-        description: '核心逻辑执行的 Python 代码。'
-      },
-      {
-        name: 'post',
-        label: '后处理脚本 (post)',
-        language: 'python',
-        defaultCode: '# post(self, shared_data, prep_result, exec_result)\n# 在 exec 之后运行，用于清理或处理结果\n# 返回值将作为节点的最终输出 (如果适用)\nreturn exec_result',
-        description: '后处理阶段执行的 Python 代码。'
-      },
-      {
-        name: 'exec_fallback',
-        label: '回退脚本 (exec_fallback)',
-        language: 'python',
-        defaultCode: '# exec_fallback(self, prep_result, exception)\n# 当 exec 抛出异常且所有重试都失败时运行\nprint(f"Fallback for {self.params.get(\'name\', \'Node\')} due to: {exception}")\nraise exception # 默认重新抛出异常',
-        description: '当 exec 方法失败时的回退逻辑。'
-      }
-    ],
-    inputs: [
-      { id: 'input_default', label: '输入', position: { side: 'top', offset: 0.5 }, description: '默认输入点' }
-    ],
-    outputs: [
-      { id: 'success', label: '成功', position: { side: 'bottom', offset: 0.33 }, description: '当节点成功执行时触发。' },
-      { id: 'failure', label: '失败', position: { side: 'bottom', offset: 0.66 }, description: '当节点执行失败时触发。' }
-    ],
-    // outputActions: [ // This will be removed
-    //   { id: 'success', label: '成功', description: '当节点成功执行时触发。' },
-    //   { id: 'failure', label: '失败', description: '当节点执行失败时触发。' }
-    // ],
-  },
-  'pf.AsyncNode': {
-    type: 'pf.AsyncNode',
-    label: '异步节点 (AsyncNode)',
-    pocketflowClass: 'pf.AsyncNode',
-    description: 'PocketFlow 中的基础异步节点。',
-    defaultParams: { name: 'async_node' },
-     paramSchema: {
-      name: { type: 'string', label: '名称', defaultValue: 'async_node', required: true, description: '节点的唯一名称。' },
-      max_retries: { type: 'number', label: '最大重试次数', defaultValue: 1, validation: { min: 0 }, description: '执行失败时的最大重试次数。' },
-      wait: { type: 'number', label: '重试等待时间 (秒)', defaultValue: 0, validation: { min: 0 }, description: '每次重试之间的等待时间。' },
-    },
-    icon: 'mdi-cogs',
-    color: '#2196F3', // Blue
-    category: '核心',
-    defaultSize: { width: 200, height: 120 }, // Adjusted size
-    supportsCodeEditing: true,
-    codeBlocksDefinition: [
-      {
-        name: 'prep_async',
-        label: '异步准备 (prep_async)',
-        language: 'python',
-        defaultCode: '# async prep_async(self, shared_data)\n# Asynchronous preparation step\npass',
-        description: '异步准备阶段。'
-      },
-      {
-        name: 'exec_async',
-        label: '异步执行 (exec_async)',
-        language: 'python',
-        defaultCode: '# async exec_async(self, prep_result)\n# Asynchronous execution logic\nprint(f"Executing async {self.params.get(\'name\', \'AsyncNode\')} with prep_result: {prep_result}")\nreturn prep_result',
-        description: '核心异步执行逻辑。'
-      },
-      {
-        name: 'post_async',
-        label: '异步后处理 (post_async)',
-        language: 'python',
-        defaultCode: '# async post_async(self, shared_data, prep_result, exec_result)\n# Asynchronous post-processing step\nreturn exec_result',
-        description: '异步后处理阶段。'
-      },
-      {
-        name: 'exec_fallback_async',
-        label: '异步回退 (exec_fallback_async)',
-        language: 'python',
-        defaultCode: '# async exec_fallback_async(self, prep_result, exception)\n# Asynchronous fallback logic\nprint(f"Async fallback for {self.params.get(\'name\', \'AsyncNode\')} due to: {exception}")\nraise exception',
-        description: '异步执行失败时的回退逻辑。'
-      }
-    ],
-    inputs: [
-      { id: 'input_default', label: '输入', position: { side: 'top', offset: 0.5 }, description: '默认异步输入点' }
-    ],
-    outputs: [
-      { id: 'success', label: '成功', position: { side: 'bottom', offset: 0.33 }, description: '当节点成功执行时触发。' },
-      { id: 'failure', label: '失败', position: { side: 'bottom', offset: 0.66 }, description: '当节点执行失败时触发。' }
-    ],
-    // outputActions: [ // This will be removed
-    //   { id: 'success', label: '成功', description: '当节点成功执行时触发。' },
-    //   { id: 'failure', label: '失败', description: '当节点执行失败时触发。' }
-    // ],
-  },
-  // TODO: Add more node definitions for Flow, BatchNode, etc.
+  'pf.Node': new PfNodeDefinition(),
+  'pf.AsyncNode': new PfAsyncNodeDefinition(),
+  'pf.BatchNode': new PfBatchNodeDefinition(),
+  'pf.AsyncBatchNode': new PfAsyncBatchNodeDefinition(),
+  'pf.AsyncParallelBatchNode': new PfAsyncParallelBatchNodeDefinition(),
+  'pf.Flow': new PfFlowDefinition(),
+  'pf.BatchFlow': new PfBatchFlowDefinition(),
+  'pf.AsyncFlow': new PfAsyncFlowDefinition(),
+  'pf.AsyncBatchFlow': new PfAsyncBatchFlowDefinition(),
+  'pf.AsyncParallelBatchFlow': new PfAsyncParallelBatchFlowDefinition(),
+  // Add other custom or utility nodes here if any in the future
 };
 
 // --- History Snapshot Type ---
@@ -147,10 +41,13 @@ interface FlowStateSnapshot {
 }
 
 export const useFlowStore = defineStore('flow', () => {
-  // --- State ---
   const nodeRegistry = ref<NodeRegistry>(initialNodeRegistry);
 
-  const flowState = ref<FlowState>({
+  const initialFlowState: FlowState = {
+    id: `flow_default_${Date.now()}`, // Default ID for placeholder
+    name: 'No Flow Selected',
+    description: 'Please create or select a flow.',
+    flowType: 'PfFlowDefinition',
     nodes: [],
     edges: [],
     flowParams: {},
@@ -162,26 +59,40 @@ export const useFlowStore = defineStore('flow', () => {
       snapToGrid: false,
       gridSize: 20,
     },
-  });
+  };
+
+  const flowState = ref<FlowState>({ ...initialFlowState });
 
   // --- History State ---
   const history = ref<FlowStateSnapshot[]>([]);
   const historyIndex = ref<number>(-1);
-  const MAX_HISTORY_LENGTH = 50; // Max undo steps
-  let isRestoringHistory = false; // Flag to prevent recording history during undo/redo
+  const MAX_HISTORY_LENGTH = 50;
+  let isRestoringHistory = false;
+
+  // --- Persistence ---
+  function persistFlowState() {
+    if (flowState.value.id && flowState.value.id.startsWith('flow_')) { // Only persist actual flows, not placeholders
+      try {
+        console.log(`[flowStore] Persisting flow: ${flowState.value.id}`);
+        localStorage.setItem(`flowData_${flowState.value.id}`, JSON.stringify(flowState.value));
+      } catch (error) {
+        console.error('[flowStore] Error persisting flow state to localStorage:', error);
+      }
+    }
+  }
 
   // --- Getters ---
   const nodes = computed(() => flowState.value.nodes);
-  const edges = computed(() => flowState.value.edges); // Added for edges
+  const edges = computed(() => flowState.value.edges); 
   const selectedNodeId = computed(() => flowState.value.selectedNodeId);
-  const selectedEdgeId = computed(() => flowState.value.selectedEdgeId); // Added
+  const selectedEdgeId = computed(() => flowState.value.selectedEdgeId);
 
   const selectedNode = computed(() => {
     if (!flowState.value.selectedNodeId) return null;
     return flowState.value.nodes.find(n => n.id === flowState.value.selectedNodeId) || null;
   });
 
-  const selectedEdge = computed(() => { // Added
+  const selectedEdge = computed(() => { 
     if (!flowState.value.selectedEdgeId) return null;
     return flowState.value.edges.find(e => e.id === flowState.value.selectedEdgeId) || null;
   });
@@ -193,7 +104,22 @@ export const useFlowStore = defineStore('flow', () => {
 
   const canUndo = computed(() => historyIndex.value > 0);
   const canRedo = computed(() => historyIndex.value < history.value.length - 1);
-  
+  const categorizedNodeDefinitions = computed(() => { // Keep this getter
+    const categories: Record<string, NodeDefinition[]> = {};
+    const registry = nodeRegistry.value;
+    if (!registry || Object.keys(registry).length === 0) {
+      return categories;
+    }
+    for (const [typeKeyInRegistry, nodeDefInstance] of Object.entries(registry)) {
+      if (!nodeDefInstance) continue;
+      const categoryName = nodeDefInstance.category || 'Uncategorized';
+      if (!categories[categoryName]) categories[categoryName] = [];
+      categories[categoryName].push(nodeDefInstance);
+    }
+    return categories;
+  });
+
+
   // --- Private History Management ---
   function recordHistory() {
     if (isRestoringHistory) return;
@@ -211,41 +137,35 @@ export const useFlowStore = defineStore('flow', () => {
     
     if (history.value.length > MAX_HISTORY_LENGTH) {
       history.value.shift();
-      // historyIndex doesn't need to change here, as we are always adding to the end
-      // and then potentially removing from the beginning.
-      // The current position (historyIndex) effectively shifts with the array.
     } else {
-      historyIndex.value = history.value.length - 1; // Point to the new latest snapshot
+      historyIndex.value = history.value.length - 1;
     }
+    persistFlowState(); // Persist state after recording history
   }
   
-  // Initial history record - capture the initial empty state
-  // This ensures that the first actual change can be undone to this empty state.
-  recordHistory(); 
+  // Initial history record
+  // recordHistory(); // This will be called when a flow is created or loaded
 
   // --- Actions ---
   function addNode(nodeType: string, position: { x: number; y: number }): FlowNode | undefined {
-    const definition = nodeRegistry.value[nodeType];
+    const definition = nodeRegistry.value[nodeType]; 
     if (!definition) {
       console.error(`Node definition for type "${nodeType}" not found.`);
-      return undefined; // Return undefined if definition not found
+      return undefined; 
     }
 
     const newNode: FlowNode = {
-      id: generateUUID(),
+      id: crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }),
       type: nodeType,
       label: definition.label,
       position,
-      params: JSON.parse(JSON.stringify(definition.defaultParams)), // Deep copy
+      params: JSON.parse(JSON.stringify(definition.defaultParams)), 
       size: definition.defaultSize ? { ...definition.defaultSize } : undefined,
-      // Initialize code properties if supported
-      // code: definition.supportsCodeEditing ? definition.defaultCode : undefined, - REMOVED
-      // codeLanguage: definition.supportsCodeEditing ? definition.codeLanguage : undefined, - REMOVED
       codeBlocks: {},
     };
 
     if (definition.supportsCodeEditing && definition.codeBlocksDefinition) {
-      newNode.codeBlocks = {}; // Ensure it\'s an object
+      newNode.codeBlocks = {}; 
       for (const blockDef of definition.codeBlocksDefinition) {
         newNode.codeBlocks[blockDef.name] = {
           code: blockDef.defaultCode,
@@ -257,128 +177,84 @@ export const useFlowStore = defineStore('flow', () => {
     flowState.value.nodes.push(newNode);
     setSelectedNode(newNode.id);
     recordHistory();
-    return newNode; // Return the newly created node
+    return newNode; 
   }
 
   function setSelectedNode(nodeId: string | null) {
-    // Only record history if selection actually changes and it's not part of undo/redo
     const changed = flowState.value.selectedNodeId !== nodeId;
     flowState.value.selectedNodeId = nodeId;
     if (nodeId) {
       flowState.value.selectedEdgeId = null;
     }
-    // Note: Decided not to record simple selection changes in history for now to avoid clutter.
-    // If needed, add: if (changed && !isRestoringHistory) recordHistory();
   }
 
-  function setSelectedEdge(edgeId: string | null) { // Added
+  function setSelectedEdge(edgeId: string | null) { 
     const changed = flowState.value.selectedEdgeId !== edgeId;
     flowState.value.selectedEdgeId = edgeId;
     if (edgeId) {
       flowState.value.selectedNodeId = null;
     }
-    // Note: Decided not to record simple selection changes in history.
-    // If needed, add: if (changed && !isRestoringHistory) recordHistory();
   }
 
   function updateNodeParams(nodeId: string, paramsToUpdate: Record<string, any>) {
     const node = flowState.value.nodes.find(n => n.id === nodeId);
     if (node) {
       node.params = { ...node.params, ...paramsToUpdate };
-      recordHistory(); // Param changes are discrete, so record immediately
+      recordHistory(); 
     }
   }
-
-  // function updateNodeCode(nodeId: string, newCode: string) { // OLD single code block version
-  //   const node = flowState.value.nodes.find(n => n.id === nodeId);
-  //   if (node) {
-  //     const definition = nodeRegistry.value[node.type];
-  //     if (definition?.supportsCodeEditing) {
-  //       node.code = newCode;
-  //       // Optionally, if language can be changed by user, update it here too
-  //       // node.codeLanguage = newLanguage; 
-  //       recordHistory();
-  //     } else {
-  //       console.warn(`Node ${nodeId} (type: ${node.type}) does not support code editing.`);
-  //     }
-  //   }
-  // }
-
+  
   function updateNodeCodeBlock(nodeId: string, blockName: string, newCode: string) {
     const node = flowState.value.nodes.find(n => n.id === nodeId);
-    if (node && node.codeBlocks && node.codeBlocks[blockName]) {
-      const definition = nodeRegistry.value[node.type];
-      if (definition?.supportsCodeEditing && definition.codeBlocksDefinition?.find(b => b.name === blockName)) {
-        node.codeBlocks[blockName].code = newCode;
-        // Language is fixed by definition for now, but could be updatable:
-        // node.codeBlocks[blockName].language = newLanguage;
-        recordHistory();
-      } else {
-        console.warn(`Node ${nodeId} or block ${blockName} does not support code editing or definition not found.`);
+    if (node) {
+      if (node.codeBlocks && node.codeBlocks[blockName]) {
+        const definition = nodeRegistry.value[node.type];
+        if (definition?.supportsCodeEditing && definition.codeBlocksDefinition?.find((b: CodeBlockDefinition) => b.name === blockName)) {
+          node.codeBlocks[blockName].code = newCode;
+          recordHistory();
+        }
       }
-    } else {
-      console.warn(`Node ${nodeId} or code block ${blockName} not found.`);
     }
   }
 
   function updateNodePosition(nodeId: string, newPosition: { x: number, y: number }) {
     const node = flowState.value.nodes.find(n => n.id === nodeId);
     if (node) {
-      console.log(`[store] Updating position for ${nodeId} from ${JSON.stringify(node.position)} to ${JSON.stringify(newPosition)}`);
-      // Temporarily remove condition to force update for debugging drag issue
-      // if (node.position.x !== newPosition.x || node.position.y !== newPosition.y) {
       node.position = newPosition;
-      // History is NOT recorded here. It will be recorded by finalizeNodeInteraction.
-      // }
+      // History recorded by finalizeNodeInteraction
     }
   }
 
-  // New action to be called at the end of an interaction that should be recorded
-  function finalizeNodeInteraction(itemId?: string) { // itemId is optional, could be nodeId or edgeId
-    // We could add logic here if different items need different history handling
+  function finalizeNodeInteraction(itemId?: string) { 
     console.log('Finalizing interaction, recording history for item:', itemId);
     recordHistory();
   }
 
   function updateViewport(newViewport: Partial<FlowState['viewport']>) {
     flowState.value.viewport = { ...flowState.value.viewport, ...newViewport };
-    // Viewport changes are typically not part of undo/redo history
   }
 
   function addEdge(edgeData: Omit<FlowEdge, 'id' | 'style' | 'lineType' | 'animated'> & { label?: string }) {
     const sourceNode = nodes.value.find(n => n.id === edgeData.sourceNodeId);
     const targetNode = nodes.value.find(n => n.id === edgeData.targetNodeId);
 
-    if (!sourceNode || !targetNode) {
-      console.error("Source or target node not found for edge creation.");
-      return;
-    }
-    if (sourceNode.id === targetNode.id) {
-      console.warn("Cannot connect a node to itself.");
-      return;
-    }
+    if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return;
 
-    // Prevent duplicate edges (same source node, same source output, same target node, same target input)
     const existingEdge = flowState.value.edges.find(e => 
         e.sourceNodeId === edgeData.sourceNodeId &&
-        e.sourceOutputId === edgeData.sourceOutputId && // Updated from sourceAction
+        e.sourceOutputId === edgeData.sourceOutputId &&
         e.targetNodeId === edgeData.targetNodeId &&
         e.targetInputId === edgeData.targetInputId
     );
-    if (existingEdge) {
-        console.warn("Edge already exists:", existingEdge);
-        return;
-    }
+    if (existingEdge) return;
     
     const sourceNodeDef = nodeRegistry.value[sourceNode.type];
-    // Get label from the new 'outputs' definition
-    const outputDef = sourceNodeDef?.outputs?.find(o => o.id === edgeData.sourceOutputId);
+    const outputDef = sourceNodeDef?.outputs?.find((o: NodeOutputDefinition) => o.id === edgeData.sourceOutputId);
     const edgeLabel = edgeData.label || outputDef?.label || edgeData.sourceOutputId;
 
-
     const newEdge: FlowEdge = {
-      id: generateUUID(),
-      ...edgeData, // sourceOutputId and targetInputId are now part of edgeData
+      id: crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }),
+      ...edgeData,
       label: edgeLabel,
       style: { stroke: '#555', strokeWidth: 2 },
       lineType: 'smoothstep',
@@ -391,50 +267,51 @@ export const useFlowStore = defineStore('flow', () => {
   }
 
   function removeNode(nodeId: string) {
-    const originalNodes = flowState.value.nodes.length;
+    const originalNodesCount = flowState.value.nodes.length;
     flowState.value.nodes = flowState.value.nodes.filter(n => n.id !== nodeId);
     flowState.value.edges = flowState.value.edges.filter(
       e => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId
     );
     if (flowState.value.selectedNodeId === nodeId) {
-      setSelectedNode(null); // Use setSelectedNode to handle deselection side effects
+      setSelectedNode(null);
     }
-    if (flowState.value.nodes.length !== originalNodes) { // Check if a node was actually removed
+    if (flowState.value.nodes.length !== originalNodesCount) {
         recordHistory();
     }
   }
 
   function removeEdge(edgeId: string) {
-    const originalEdges = flowState.value.edges.length;
+    const originalEdgesCount = flowState.value.edges.length;
     flowState.value.edges = flowState.value.edges.filter(e => e.id !== edgeId);
     if (flowState.value.selectedEdgeId === edgeId) {
       setSelectedEdge(null);
     }
-     if (flowState.value.edges.length !== originalEdges) { // Check if an edge was actually removed
+     if (flowState.value.edges.length !== originalEdgesCount) {
         recordHistory();
     }
   }
   
-  // --- Toolbar Actions ---
   function clearCanvas() {
     if (flowState.value.nodes.length > 0 || flowState.value.edges.length > 0) {
         flowState.value.nodes = [];
         flowState.value.edges = [];
         setSelectedNode(null);
         setSelectedEdge(null);
-        // resetView(); // Optionally reset view
         recordHistory();
     }
   }
 
   function toggleGrid() {
     flowState.value.editorSettings.showGrid = !flowState.value.editorSettings.showGrid;
+    persistFlowState(); // Persist editor settings change
   }
 
   function toggleSnapToGrid() {
     flowState.value.editorSettings.snapToGrid = !flowState.value.editorSettings.snapToGrid;
+    persistFlowState(); // Persist editor settings change
   }
 
+  // ... (zoomIn, zoomOut, resetView remain the same) ...
   const ZOOM_STEP = 0.1;
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 3.0;
@@ -442,34 +319,37 @@ export const useFlowStore = defineStore('flow', () => {
   function zoomIn() {
     const newZoom = Math.min(MAX_ZOOM, flowState.value.viewport.zoom + ZOOM_STEP);
     updateViewport({ zoom: newZoom });
+    // persistFlowState(); // Viewport changes might also be persisted
   }
 
   function zoomOut() {
     const newZoom = Math.max(MIN_ZOOM, flowState.value.viewport.zoom - ZOOM_STEP);
     updateViewport({ zoom: newZoom });
+    // persistFlowState();
   }
 
   function resetView() {
     updateViewport({ x: 0, y: 0, zoom: 1 });
+    // persistFlowState();
   }
 
-  // --- Undo/Redo Actions ---
-  async function undo() { // Made async
+
+  async function undo() {
     if (canUndo.value) {
       isRestoringHistory = true;
       historyIndex.value--;
       const snapshot = history.value[historyIndex.value];
       flowState.value.nodes = JSON.parse(JSON.stringify(snapshot.nodes));
       flowState.value.edges = JSON.parse(JSON.stringify(snapshot.edges));
-      // Deselect on undo/redo to avoid issues with stale selections
       setSelectedNode(null);
       setSelectedEdge(null);
-      await nextTick(); // Wait for Vue to process DOM updates
+      await nextTick(); 
       isRestoringHistory = false;
+      persistFlowState(); // Persist after undo
     }
   }
 
-  async function redo() { // Made async
+  async function redo() {
     if (canRedo.value) {
       isRestoringHistory = true;
       historyIndex.value++;
@@ -478,69 +358,175 @@ export const useFlowStore = defineStore('flow', () => {
       flowState.value.edges = JSON.parse(JSON.stringify(snapshot.edges));
       setSelectedNode(null);
       setSelectedEdge(null);
-      await nextTick(); // Wait for Vue to process DOM updates
+      await nextTick(); 
       isRestoringHistory = false;
+      persistFlowState(); // Persist after redo
     }
   }
 
-  // Action to update node size
   function updateNodeSize(nodeId: string, newSize: { width: number, height: number }) {
-    // If undo/redo is in progress, the component might be reacting to restored state.
-    // The guard helps prevent unnecessary updates or logs during the restoration's nextTick phase.
-    if (isRestoringHistory) {
-      // console.log(`[store] updateNodeSize call for ${nodeId} ignored during history restoration.`);
-      return;
-    }
-
+    if (isRestoringHistory) return;
     const node = flowState.value.nodes.find(n => n.id === nodeId);
     if (node) {
-      // Check if the size actually needs updating
       if (!node.size || node.size.width !== newSize.width || node.size.height !== newSize.height) {
-        // console.log(`[store] Updating size for ${nodeId} from ${JSON.stringify(node.size)} to ${JSON.stringify(newSize)} (no new history)`);
-        // newSize is a complete { width, height } object from FlowNodeItem.vue
         node.size = { width: newSize.width, height: newSize.height };
-        // DO NOT record history here for automatic size adjustments.
-        // History should be recorded by user-initiated actions that are explicitly undoable.
+        // Do not record history for auto size adjustments, but persist the change
+        persistFlowState();
       }
-    } else {
-      // console.warn(`[store] updateNodeSize: Node ${nodeId} not found (possibly already removed).`);
     }
+  }
+
+  function clearSelection() {
+    setSelectedNode(null);
+    setSelectedEdge(null);
+  }
+
+  function createNewFlow(id: string, name: string, description: string, flowType: string) {
+    flowState.value = {
+      id,
+      name,
+      description,
+      flowType,
+      nodes: [],
+      edges: [],
+      flowParams: {},
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      editorSettings: {
+        showGrid: true,
+        snapToGrid: false,
+        gridSize: 20,
+      }
+    };
+    history.value = [];
+    historyIndex.value = -1;
+    recordHistory(); // This will also call persistFlowState for the new flow
+    console.log(`[flowStore] New flow instance created in store: ${name} (ID: ${id})`);
+  }
+  
+  // Action to load a full flow state from persistence
+  function loadFlowState(savedState: FlowState) {
+    console.log(`[flowStore] Loading flow state for ID: ${savedState.id}`);
+    isRestoringHistory = true; // Prevent history recording during direct state load
+    
+    // Ensure all parts of the state are well-defined, merging with defaults if necessary
+    const defaultEditorSettings = {
+        showGrid: true,
+        snapToGrid: false,
+        gridSize: 20,
+    };
+    const defaultViewport = { x: 0, y: 0, zoom: 1 };
+
+    flowState.value = {
+        ...initialFlowState, // Start with defaults to ensure all keys are present
+        ...JSON.parse(JSON.stringify(savedState)), // Deep copy and overwrite with saved state
+        editorSettings: { // Explicitly merge editorSettings
+            ...defaultEditorSettings,
+            ...(savedState.editorSettings || {}),
+        },
+        viewport: { // Explicitly merge viewport
+            ...defaultViewport,
+            ...(savedState.viewport || {}),
+        }
+    };
+    
+    // Reset history for the loaded flow and establish its current state as the first entry
+    history.value = [];
+    historyIndex.value = -1;
+    
+    const snapshot: FlowStateSnapshot = {
+      nodes: JSON.parse(JSON.stringify(flowState.value.nodes)),
+      edges: JSON.parse(JSON.stringify(flowState.value.edges)),
+    };
+    history.value.push(snapshot);
+    historyIndex.value = 0;
+
+    isRestoringHistory = false;
+    console.log(`[flowStore] Flow state loaded for ${flowState.value.name}`);
+  }
+
+
+  function initializeDefaultFlow() {
+    const defaultId = initialFlowState.id || `flow_default_${Date.now()}`;
+    // Check if a flow with this default ID already exists in localStorage
+    // to avoid overwriting it if it was a real flow that happened to have this ID.
+    // This is a rare edge case but good to consider.
+    // For now, we'll assume createNewFlow will handle it or it's for a placeholder.
+    
+    // Try to load from localStorage if it's the placeholder ID
+    const storedDefaultFlow = localStorage.getItem(`flowData_${defaultId}`);
+    if (storedDefaultFlow) {
+        try {
+            const parsedFlow = JSON.parse(storedDefaultFlow) as FlowState;
+            if (parsedFlow.id === defaultId) { // Ensure it's the actual placeholder flow
+                loadFlowState(parsedFlow);
+                console.log(`[flowStore] Initialized with stored default flow: ${defaultId}`);
+                return;
+            }
+        } catch (e) {
+            console.warn('[flowStore] Failed to parse stored default flow, creating new.', e);
+        }
+    }
+
+    createNewFlow(
+      defaultId, 
+      initialFlowState.name || 'No Flow Selected', 
+      initialFlowState.description || 'Please create or select a flow.', 
+      initialFlowState.flowType || 'PfFlowDefinition'
+    );
+    console.log('[flowStore] Initialized with new default/placeholder flow.');
+  }
+
+  function getFlowDefinitionByType(type: string): NodeDefinition | undefined {
+    const definition = nodeRegistry.value[type];
+    if (definition && definition.isContainer) { 
+      return definition;
+    }
+    return definition; 
   }
 
   return {
-    nodeRegistry,
     flowState,
-    nodes,
-    edges,
-    selectedNodeId,
-    selectedEdgeId,
-    selectedNode,
-    selectedEdge,
-    selectedNodeDefinition,
+    nodeRegistry,
+    nodes, 
+    edges, 
+    selectedNode, 
+    selectedEdge, 
+    selectedNodeId, 
+    selectedEdgeId, 
+    selectedNodeDefinition, 
+    canUndo, 
+    canRedo, 
+    categorizedNodeDefinitions,
+    
     addNode,
+    removeNode,
+    addEdge,
+    removeEdge,
+    updateNodePosition,
+    updateNodeParams, 
+    updateNodeCodeBlock,
+    updateNodeSize,
     setSelectedNode,
     setSelectedEdge,
-    updateNodeParams,
-    // updateNodeCode, // Correctly placed here - REMOVED
-    updateNodeCodeBlock, // New function for multiple code blocks
-    updateNodePosition,
+    clearSelection, 
     updateViewport, 
-    addEdge,
-    removeNode,
-    removeEdge,
-    finalizeNodeInteraction, 
-    updateNodeSize, 
-    // Toolbar actions
+    undo,
+    redo,
+    // recordHistory, // Not typically exposed directly
+    finalizeNodeInteraction,
+    
     clearCanvas,
     toggleGrid,
     toggleSnapToGrid,
     zoomIn,
     zoomOut,
     resetView,
-    // Undo/Redo
-    undo,
-    redo,
-    canUndo,
-    canRedo,
+    
+    createNewFlow,
+    initializeDefaultFlow, 
+    getFlowDefinitionByType, 
+    loadFlowState, // Expose the new action
   };
 });
