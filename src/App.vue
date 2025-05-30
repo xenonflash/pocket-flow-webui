@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import Toolbar from './components/layout/Toolbar.vue';
-import NodePalette from './components/layout/NodePalette.vue';
-import PropertyEditor from './components/layout/PropertyEditor.vue';
-import FlowCanvas from './components/canvas/FlowCanvas.vue';
-import FlowListPanel from './components/layout/FlowListPanel.vue';
+import NodePalette from '@/components/layout/NodePalette.vue';
+import PropertyEditor from '@/components/layout/PropertyEditor.vue';
+import FlowCanvas from '@/components/canvas/FlowCanvas.vue';
+import Toolbar from '@/components/layout/Toolbar.vue';
+import ExecutionLogPanel from '@/components/layout/ExecutionLogPanel.vue'; // + Import ExecutionLogPanel
+import FlowListPanel from '@/components/layout/FlowListPanel.vue'; // + Import FlowListPanel
 import { useFlowsManagerStore } from '@/stores/flows-manager';
 import { onMounted } from 'vue';
 import { useFlowStore } from './stores/flow';
@@ -21,24 +22,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <div id="app-container">
+  <div class="app-container">
     <Toolbar />
-    <div class="main-content">
+    <div class="main-layout">
       <FlowListPanel />
-      <NodePalette v-if="flowsManagerStore.hasActiveFlow" />
       <div class="editor-area">
-        <FlowCanvas v-if="flowsManagerStore.hasActiveFlow" />
-        <div v-else class="no-flow-selected-message">
-          <h1>Welcome to Pocket Flow</h1>
-          <p>Please create a new flow or select an existing one from the panel on the left to get started.</p>
-        </div>
+        <NodePalette />
+        <FlowCanvas />
+        <PropertyEditor />
       </div>
-      <PropertyEditor v-if="flowsManagerStore.hasActiveFlow" />
     </div>
+    <ExecutionLogPanel /> <!-- + Add ExecutionLogPanel here -->
   </div>
 </template>
 
-<style>
+<style scoped>
 /* 全局样式重置或基础样式 */
 body {
   margin: 0;
@@ -49,27 +47,31 @@ body {
   background-color: #ffffff; /* 整体背景色 */
 }
 
-#app-container {
+.app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* 占满整个视口高度 */
-  overflow: hidden; /* 防止主容器滚动 */
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden; /* Prevent whole page scroll */
 }
 
-.main-content {
+.main-layout {
   display: flex;
   flex-grow: 1;
-  overflow: hidden;
+  overflow: hidden; /* Important for child flex items to scroll independently */
 }
 
 .editor-area {
+  display: flex;
   flex-grow: 1;
-  display: flex; 
-  flex-direction: column; /* Changed from row (default) to column */
-  justify-content: center; 
-  overflow: hidden; 
-  position: relative; 
-  background-color: #fff; /* Ensure editor area has a background */
+  /* background-color: #f0f0f0; */ /* Optional: to see the area */
+  overflow: hidden; /* Important for child flex items to scroll independently */
+}
+
+/* Ensure FlowCanvas can grow and potentially scroll if content is too large */
+.editor-area > :nth-child(2) { /* Assuming FlowCanvas is the second child */
+  flex-grow: 1;
+  overflow: auto; /* Or hidden, depending on desired behavior for canvas itself */
 }
 
 .no-flow-selected-message {

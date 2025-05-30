@@ -6,6 +6,10 @@
     :data-node-id="node.id"
     @mousedown.left="$emit('nodeMousedown', $event, node.id)"
     @click="$emit('nodeClick', node.id)"
+    :class="{ 
+      'selected': isSelected, /* Added selected class binding */
+      'async-node': isAsyncNode 
+    }"
   >
     <div class="node-header" :style="{ backgroundColor: nodeDefinition?.color || '#ccc' }">
       {{ nodeDefinition?.label || node.label }}
@@ -45,17 +49,7 @@
         </div>
       </div>
       
-      <!-- Fallback for old outputActions if new outputs are not defined -->
-      <div v-else-if="nodeDefinition?.outputActions" class="node-actions">
-        <div 
-          v-for="action in nodeDefinition.outputActions"
-          :key="action.id"
-          class="action-point"
-          :title="`${action.label} (${action.id})`"
-          @mousedown.stop="$emit('actionpointMousedown', $event, node.id, action.id)" 
-        >
-        </div>
-      </div>
+      <!-- Removed v-else-if for nodeDefinition?.outputActions -->
     </div>
   </div>
 </template>
@@ -63,13 +57,13 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted } from 'vue';
 // Ensure NodeInputDefinition and NodeOutputDefinition are imported
-import type { FlowNode, NodeDefinition, NodeInputDefinition, NodeOutputDefinition } from '@/types/pocketflow-editor';
+import type { FlowNode, NodeDefinition, NodeInputDefinition, NodeOutputDefinition } from '@/types/pocketflow-editor'; 
 import { useFlowStore } from '@/stores/flow';
 
 const props = defineProps<{
   node: FlowNode;
   isSelected: boolean;
-  nodeDefinition: NodeDefinition | null;
+  nodeDefinition: NodeDefinition | null; // Corrected type to NodeDefinition | null
   getParamLabel: (nodeType: string, paramKey: string) => string | undefined;
 }>();
 
@@ -89,6 +83,11 @@ const nodeComputedStyle = computed(() => {
     borderColor: props.isSelected ? '#007bff' : (props.node.customVisuals?.color || props.nodeDefinition?.color || '#ccc'),
     boxShadow: props.isSelected ? '0 0 0 2px rgba(0,123,255,.5)' : '0 2px 5px rgba(0,0,0,0.1)',
   };
+});
+
+const isAsyncNode = computed(() => {
+  // Ensure nodeDefinition is not null and then check for isAsync property
+  return !!(props.nodeDefinition && props.nodeDefinition.isAsync);
 });
 
 const getInputPointStyle = (inputDef: NodeInputDefinition): Record<string, string> => {
@@ -209,6 +208,11 @@ onMounted(() => {
  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
+.flow-node.selected { /* Style for selected nodes */
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0,123,255,.5);
+}
+
 .node-header {
   padding: 8px 12px;
   font-size: 14px;
@@ -285,5 +289,15 @@ onMounted(() => {
   background-color: #03a9f4; 
   border-color: #0288d1;
   transform: scale(1.25); /* This might conflict if getOutputPointStyle also sets transform */
+}
+
+/* New styles for async-node class */
+.async-node {
+  background-color: #e3f2fd; /* Light blue background for async nodes */
+  border-color: #2196f3; /* Blue border for async nodes */
+}
+
+.async-node .node-header {
+  background-color: #bbdefb !important; /* Darker blue header for async nodes, added !important to ensure override */
 }
 </style>
