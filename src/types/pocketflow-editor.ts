@@ -78,6 +78,10 @@ export interface BaseDefinitionParams {
   supportsCodeEditing?: boolean;
   codeBlocksDefinition?: CodeBlockDefinition[];
   isContainer?: boolean; // Added for flows primarily
+  sharedStateAccess?: { // Added for pocketflow shared state
+    reads?: string[];
+    writes?: string[];
+  };
 }
 
 // Import all concrete node and flow definitions using relative paths
@@ -196,38 +200,36 @@ export interface FlowEdge {
  * 整个流程图的状态
  */
 export interface FlowState {
-  id?: string; // 流程图的唯一ID (例如，从后端加载时)
-  name?: string; // 流程图的名称
-  description?: string; // 流程图的描述
-  version?: string; // 版本号
-  flowType?: string; // Added to store the type of the current flow
-
+  id: string;
+  name: string;
+  description: string;
+  flowType: string; // Corresponds to a type in NodeDefinition that is a flow
   nodes: FlowNode[];
   edges: FlowEdge[];
-  
-  flowParams: Record<string, any>; // 整个流程的全局参数 (对应 Flow 基类的 params)
-  // paramSchemaForFlow?: Record<string, ParamSchemaItem>; // 如果全局参数也需要 schema 来编辑
+  initialSharedState?: Record<string, any>; // For PocketFlow's shared state
 
-  selectedNodeId?: string | null; // 当前选中的节点ID
-  selectedEdgeId?: string | null; // 当前选中的连接线ID
+  // Flow-level parameters (if any, distinct from node params)
+  // Example: global configurations for the flow execution
+  flowParams?: Record<string, any>; 
 
-  // 画布视图状态
-  viewport: { 
-    x: number; // 画布横向平移
-    y: number; // 画布纵向平移
-    zoom: number; // 画布缩放级别
+  // Editor-specific state
+  selectedNodeId: string | null;
+  selectedEdgeId: string | null;
+  viewport: {
+    x: number;
+    y: number;
+    zoom: number;
   };
-
-  // 编辑器设置
   editorSettings: {
     showGrid: boolean;
     snapToGrid: boolean;
-    gridSize?: number;
+    gridSize: number;
   };
+  // Potentially other UI states like current theme, etc.
 }
 
 /**
- * 节点注册表，用于存储所有可用的节点定义
+ * Node Registry: Maps node type strings to their definitions.
  */
 export type NodeRegistry = Record<string, NodeDefinition>;
 

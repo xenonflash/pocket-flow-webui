@@ -1,6 +1,8 @@
 <template>
   <div class="property-editor">
     <h3>属性编辑</h3>
+
+    <!-- Node Properties -->
     <div v-if="selectedNode && selectedNodeDefinition" class="editor-content">
       <div class="property-group">
         <label>ID:</label>
@@ -23,6 +25,22 @@
         </FormKit>
       </template>
       
+      <!-- Shared State Access Info -->
+      <div v-if="selectedNodeDefinition.sharedStateAccess" class="shared-state-access-info property-group">
+        <h4>共享状态访问</h4>
+        <div v-if="selectedNodeDefinition.sharedStateAccess.reads && selectedNodeDefinition.sharedStateAccess.reads.length > 0">
+          <label>读取:</label>
+          <span>{{ selectedNodeDefinition.sharedStateAccess.reads.join(', ') }}</span>
+        </div>
+        <div v-if="selectedNodeDefinition.sharedStateAccess.writes && selectedNodeDefinition.sharedStateAccess.writes.length > 0">
+          <label>写入:</label>
+          <span>{{ selectedNodeDefinition.sharedStateAccess.writes.join(', ') }}</span>
+        </div>
+        <div v-if="(!selectedNodeDefinition.sharedStateAccess.reads || selectedNodeDefinition.sharedStateAccess.reads.length === 0) && (!selectedNodeDefinition.sharedStateAccess.writes || selectedNodeDefinition.sharedStateAccess.writes.length === 0)">
+          <p>此节点不访问共享状态。</p>
+        </div>
+      </div>
+
       <!-- Code Editing Section -->
       <div v-if="selectedNodeDefinition.supportsCodeEditing && selectedNodeDefinition.codeBlocksDefinition && selectedNodeDefinition.codeBlocksDefinition.length > 0" class="code-editing-section">
         <h4>代码块</h4>
@@ -38,8 +56,42 @@
         </div>
       </div>
     </div>
+
+    <!-- Flow Properties -->
+    <div v-else-if="currentFlowState" class="editor-content flow-properties">
+      <h4>流程属性</h4>
+      <div class="property-group">
+        <label for="flowName">流程名称:</label>
+        <input id="flowName" type="text" v-model="editableFlowName" @blur="updateFlowName" class="formkit-input" />
+      </div>
+      <div class="property-group">
+        <label for="flowDescription">流程描述:</label>
+        <textarea id="flowDescription" v-model="editableFlowDescription" @blur="updateFlowDescription" class="formkit-input"></textarea>
+      </div>
+      <div class="property-group">
+        <label for="flowInitialSharedState">初始共享状态 (JSON):</label>
+        <textarea 
+          id="flowInitialSharedState" 
+          v-model="editableInitialSharedState" 
+          @blur="updateFlowInitialSharedState" 
+          class="formkit-input json-textarea"
+          rows="8"
+          placeholder='例如：\n{\n  "apiKey": "your_api_key",\n  "maxRetries": 3\n}'
+        ></textarea>
+        <p v-if="initialSharedStateError" class="error-message">{{ initialSharedStateError }}</p>
+      </div>
+       <div class="property-group">
+        <label>流程ID:</label>
+        <span>{{ currentFlowState.id }}</span>
+      </div>
+      <div class="property-group">
+        <label>流程类型:</label>
+        <span>{{ currentFlowState.flowType }}</span>
+      </div>
+    </div>
+    
     <div v-else class="no-selection">
-      <p>未选择任何节点</p>
+      <p>未选择任何节点或流程。</p>
     </div>
   </div>
 
@@ -53,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, toRaw } from 'vue';
 import { useFlowStore } from '@/stores/flow';
 import type { ParamSchemaItem, NodeDefinition, FlowNode } from '@/types/pocketflow-editor';
 import { FormKitSchema } from '@formkit/vue';
@@ -65,6 +117,52 @@ const flowStore = useFlowStore();
 const selectedNode = computed(() => flowStore.selectedNode);
 const selectedNodeDefinition = computed(() => flowStore.selectedNodeDefinition);
 const formData = ref<Record<string, any>>({});
+
+// Flow properties
+const currentFlowState = computed(() => flowStore.flowState);
+const editableFlowName = ref('');
+const editableFlowDescription = ref('');
+const editableInitialSharedState = ref('');
+const initialSharedStateError = ref<string | null>(null);
+
+
+watch(currentFlowState, (newFlowState) => {
+  if (newFlowState) {
+    editableFlowName.value = newFlowState.name;
+    editableFlowDescription.value = newFlowState.description;
+    editableInitialSharedState.value = JSON.stringify(newFlowState.initialSharedState || {}, null, 2);
+    initialSharedStateError.value = null; // Reset error on flow change
+  }
+}, { immediate: true, deep: true });
+
+const updateFlowName = () => {
+  if (currentFlowState.value && editableFlowName.value !== currentFlowState.value.name) {
+    flowStore.updateFlowMetadata({ name: editableFlowName.value });
+  }
+};
+
+const updateFlowDescription = () => {
+  if (currentFlowState.value && editableFlowDescription.value !== currentFlowState.value.description) {
+    flowStore.updateFlowMetadata({ description: editableFlowDescription.value });
+  }
+};
+
+const updateFlowInitialSharedState = () => {
+  if (currentFlowState.value) {
+    try {
+      const parsedState = JSON.parse(editableInitialSharedState.value);
+      // Check if the parsed state is different from the current state in the store to avoid unnecessary updates
+      if (JSON.stringify(parsedState) !== JSON.stringify(currentFlowState.value.initialSharedState || {})) {
+        flowStore.updateInitialSharedState(parsedState);
+      }
+      initialSharedStateError.value = null;
+    } catch (e) {
+      initialSharedStateError.value = '无效的 JSON 格式。';
+      console.warn("Error parsing initialSharedState JSON:", e);
+    }
+  }
+};
+
 
 const isCodeEditorOpen = ref(false);
 const currentEditingBlockName = ref<string | null>(null);
@@ -193,12 +291,15 @@ const handleFormInput = (newValues: FormKitGroupValue | undefined) => {
           paramsToUpdate[paramName] = parsedValue;
         } catch (e) {
           console.warn(`Invalid JSON for param ${paramName}:`, newValues[paramName]);
+          // If JSON is invalid, store the raw string so user can fix it.
+          // Or, decide if you want to prevent update / show error in UI
           paramsToUpdate[paramName] = newValues[paramName]; 
         }
       } else {
         paramsToUpdate[paramName] = newValues[paramName];
       }
     }
+    // Only update if there are actual changes to avoid unnecessary history entries
     if (Object.keys(paramsToUpdate).length > 0 && selectedNode.value) { 
        flowStore.updateNodeParams(selectedNode.value.id, paramsToUpdate);
     }
@@ -244,13 +345,22 @@ const handleFormInput = (newValues: FormKitGroupValue | undefined) => {
   color: #495057;
 }
 
-.property-group span {
+.property-group span,
+.property-group input[type="text"],
+.property-group textarea {
   background-color: #e9ecef; 
   color: #495057;
   padding: 8px 10px;
   border-radius: 4px;
   word-break: break-all; 
+  border: 1px solid #ced4da; /* Added for consistency with formkit inputs */
 }
+
+.property-group input[type="text"],
+.property-group textarea {
+   background-color: #fff; /* Inputs should be white */
+}
+
 
 /* FormKit styles will largely be handled by the theme, but we can add overrides */
 :deep(.formkit-form) {
@@ -356,18 +466,35 @@ h4 {
   background-color: #0056b3; /* Darker blue on hover */
 }
 
-/* Placeholder styling for the modal */
-.code-editor-modal-placeholder {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background-color: white;
-  padding: 20px;
-  border: 1px solid #ccc;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  z-index: 1000; /* Ensure it's above other content */
-  min-width: 300px; /* Basic width */
-  text-align: center;
+.flow-properties .property-group input[type="text"],
+.flow-properties .property-group textarea {
+  background-color: #fff; /* Ensure these are white */
+  border: 1px solid #ced4da;
 }
+
+.json-textarea {
+  font-family: monospace;
+  min-height: 100px; /* Adjust as needed */
+}
+
+.error-message {
+  color: #dc3545; /* Bootstrap danger color */
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.shared-state-access-info.property-group span {
+   background-color: #e9ecef; 
+   color: #495057;
+   padding: 8px 10px;
+   border-radius: 4px;
+   word-break: break-all; 
+   border: 1px solid #ced4da;
+}
+.shared-state-access-info.property.group p {
+  font-size: 13px;
+  color: #6c757d;
+  margin-top: 5px;
+}
+
 </style>

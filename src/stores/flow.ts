@@ -35,6 +35,7 @@ const initialNodeRegistry: NodeRegistry = {
 interface FlowStateSnapshot {
   nodes: FlowNode[];
   edges: FlowEdge[];
+  initialSharedState?: Record<string, any>; // Add initialSharedState to snapshot
   // We might want to include selectedNodeId/selectedEdgeId if restoring selection is desired
   // selectedNodeId: string | null;
   // selectedEdgeId: string | null;
@@ -58,6 +59,7 @@ export const useFlowStore = defineStore('flow', () => {
     nodes: [],
     edges: [],
     flowParams: {},
+    initialSharedState: {}, // Initialize initialSharedState
     selectedNodeId: null,
     selectedEdgeId: null,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -134,6 +136,7 @@ export const useFlowStore = defineStore('flow', () => {
     const snapshot: FlowStateSnapshot = {
       nodes: JSON.parse(JSON.stringify(flowState.value.nodes)),
       edges: JSON.parse(JSON.stringify(flowState.value.edges)),
+      initialSharedState: JSON.parse(JSON.stringify(flowState.value.initialSharedState)), // Record initialSharedState
     };
 
     if (historyIndex.value < history.value.length - 1) {
@@ -302,6 +305,7 @@ export const useFlowStore = defineStore('flow', () => {
     if (flowState.value.nodes.length > 0 || flowState.value.edges.length > 0) {
         flowState.value.nodes = [];
         flowState.value.edges = [];
+        flowState.value.initialSharedState = {}; // Clear initialSharedState as well
         setSelectedNode(null);
         setSelectedEdge(null);
         recordHistory();
@@ -362,6 +366,17 @@ export const useFlowStore = defineStore('flow', () => {
     }
   }
 
+  function updateInitialSharedState(newState: Record<string, any>) {
+    if (JSON.stringify(flowState.value.initialSharedState) !== JSON.stringify(newState)) {
+      flowState.value.initialSharedState = JSON.parse(JSON.stringify(newState)); // Deep copy
+      // No separate history record for this, it's part of the flow's overall state saved by recordHistory() when other actions occur.
+      // However, direct edits to shared state should be persistable.
+      persistFlowState(); 
+      console.log(`[flowStore] Initial shared state updated and persisted for ID: ${flowState.value.id}`);
+    }
+  }
+
+
   async function undo() {
     if (canUndo.value) {
       isRestoringHistory = true;
@@ -369,6 +384,9 @@ export const useFlowStore = defineStore('flow', () => {
       const snapshot = history.value[historyIndex.value];
       flowState.value.nodes = JSON.parse(JSON.stringify(snapshot.nodes));
       flowState.value.edges = JSON.parse(JSON.stringify(snapshot.edges));
+      flowState.value.initialSharedState = snapshot.initialSharedState 
+        ? JSON.parse(JSON.stringify(snapshot.initialSharedState)) 
+        : {}; // Restore initialSharedState
       setSelectedNode(null);
       setSelectedEdge(null);
       await nextTick(); 
@@ -384,6 +402,9 @@ export const useFlowStore = defineStore('flow', () => {
       const snapshot = history.value[historyIndex.value];
       flowState.value.nodes = JSON.parse(JSON.stringify(snapshot.nodes));
       flowState.value.edges = JSON.parse(JSON.stringify(snapshot.edges));
+      flowState.value.initialSharedState = snapshot.initialSharedState 
+        ? JSON.parse(JSON.stringify(snapshot.initialSharedState)) 
+        : {}; // Restore initialSharedState
       setSelectedNode(null);
       setSelectedEdge(null);
       await nextTick(); 
@@ -418,6 +439,7 @@ export const useFlowStore = defineStore('flow', () => {
       nodes: [],
       edges: [],
       flowParams: {},
+      initialSharedState: {}, // Initialize initialSharedState
       selectedNodeId: null,
       selectedEdgeId: null,
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -445,10 +467,15 @@ export const useFlowStore = defineStore('flow', () => {
         gridSize: 20,
     };
     const defaultViewport = { x: 0, y: 0, zoom: 1 };
+    const defaultInitialSharedState = {}; // Default for initialSharedState
 
     flowState.value = {
         ...initialFlowState, // Start with defaults to ensure all keys are present
         ...JSON.parse(JSON.stringify(savedState)), // Deep copy and overwrite with saved state
+        initialSharedState: { // Explicitly merge initialSharedState
+            ...defaultInitialSharedState,
+            ...(savedState.initialSharedState || {}),
+        },
         editorSettings: { // Explicitly merge editorSettings
             ...defaultEditorSettings,
             ...(savedState.editorSettings || {}),
@@ -466,6 +493,7 @@ export const useFlowStore = defineStore('flow', () => {
     const snapshot: FlowStateSnapshot = {
       nodes: JSON.parse(JSON.stringify(flowState.value.nodes)),
       edges: JSON.parse(JSON.stringify(flowState.value.edges)),
+      initialSharedState: JSON.parse(JSON.stringify(flowState.value.initialSharedState)), // Snapshot initialSharedState
     };
     history.value.push(snapshot);
     historyIndex.value = 0;
@@ -498,64 +526,60 @@ export const useFlowStore = defineStore('flow', () => {
     }
 
     createNewFlow(
-      defaultId, 
-      initialFlowState.name || 'No Flow Selected', 
-      initialFlowState.description || 'Please create or select a flow.', 
-      initialFlowState.flowType || 'PfFlowDefinition'
+      defaultId,
+      initialFlowState.name,
+      initialFlowState.description,
+      initialFlowState.flowType
     );
-    console.log('[flowStore] Initialized with new default/placeholder flow.');
-  }
-
-  function getFlowDefinitionByType(type: string): NodeDefinition | undefined {
-    const definition = nodeRegistry.value[type];
-    if (definition && definition.isContainer) { 
-      return definition;
-    }
-    return definition; 
+    console.log(`[flowStore] Initialized with new default flow: ${defaultId}`);
   }
 
   return {
+    // State
     flowState,
     nodeRegistry,
-    nodes, 
-    edges, 
-    selectedNode, 
-    selectedEdge, 
-    selectedNodeId, 
-    selectedEdgeId, 
-    selectedNodeDefinition, 
-    canUndo, 
-    canRedo, 
+    history,
+    historyIndex,
+
+    // Getters
+    nodes,
+    edges,
+    selectedNodeId,
+    selectedEdgeId,
+    selectedNode,
+    selectedEdge,
+    selectedNodeDefinition,
+    canUndo,
+    canRedo,
     categorizedNodeDefinitions,
-    
+
+    // Actions
     addNode,
-    removeNode,
-    addEdge,
-    removeEdge,
-    updateNodePosition,
-    updateNodeParams, 
-    updateNodeCodeBlock,
-    updateNodeSize,
     setSelectedNode,
     setSelectedEdge,
-    clearSelection, 
-    updateViewport, 
-    undo,
-    redo,
-    // recordHistory, // Not typically exposed directly
+    updateNodeParams,
+    updateNodeCodeBlock,
+    updateNodePosition,
     finalizeNodeInteraction,
-    
+    updateViewport,
+    addEdge,
+    removeNode,
+    removeEdge,
     clearCanvas,
     toggleGrid,
     toggleSnapToGrid,
     zoomIn,
     zoomOut,
     resetView,
-    
+    updateFlowMetadata,
+    updateInitialSharedState, // Expose new action
+    undo,
+    redo,
+    updateNodeSize,
+    clearSelection,
     createNewFlow,
-    initializeDefaultFlow, 
-    getFlowDefinitionByType, 
-    loadFlowState, // Expose the new action
-    updateFlowMetadata, // Expose the metadata update action
+    loadFlowState,
+    initializeDefaultFlow,
+    persistFlowState, // Expose persistFlowState if needed by other stores directly
   };
 });

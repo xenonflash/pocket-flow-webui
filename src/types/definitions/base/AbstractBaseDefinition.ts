@@ -23,6 +23,7 @@ export abstract class AbstractBaseDefinition {
   readonly supportsCodeEditing: boolean;
   readonly codeBlocksDefinition?: CodeBlockDefinition[];
   readonly isContainer: boolean;
+  readonly sharedStateAccess?: { reads?: string[]; writes?: string[] };
 
   constructor(params: BaseDefinitionParams) {
     // Detailed logging at the start of the constructor
@@ -62,6 +63,7 @@ export abstract class AbstractBaseDefinition {
     this.supportsCodeEditing = params.supportsCodeEditing || false;
     this.codeBlocksDefinition = params.codeBlocksDefinition;
     this.isContainer = params.isContainer || false;
+    this.sharedStateAccess = params.sharedStateAccess;
 
     // Detailed logging at the end of the constructor
     console.log(
