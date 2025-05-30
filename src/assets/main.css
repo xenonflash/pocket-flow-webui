@@ -2,36 +2,33 @@
 
 @import './base.css';
 
+/* Resetting #app styles for full-page layout */
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  font-weight: normal;
+  /* max-width: 1280px; */ /* Removed max-width */
+  /* margin: 0 auto; */ /* Removed margin auto */
+  /* padding: 2rem; */ /* Removed padding */
+  font-weight: var(--pf-font-weight-normal);
+  height: 100vh; /* Ensure app takes full viewport height */
+  width: 100vw; /* Ensure app takes full viewport width */
+  display: flex; /* Added to enable flexbox for App.vue's root */
+  flex-direction: column; /* Added to enable flexbox for App.vue's root */
 }
 
-a,
-.green {
-  text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
-}
+/* Removing old link styles as they are now in base.css */
+/* a, .green { ... } */
+/* @media (hover: hover) { a:hover { ... } } */
 
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
-}
+/* Removing old responsive layout as it's too specific */
+/* @media (min-width: 1024px) { ... } */
 
-@media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
+/* Global styles for the application can go here if needed,
+   but prefer component-scoped styles or utility classes from base.css */
 
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
+body {
+  /* display: flex; */ /* Removed, handled by #app or specific layouts */
+  /* place-items: center; */ /* Removed */
+  margin: 0; /* Ensure no default body margin */
+  background-color: var(--pf-color-background-primary); /* Use new variable */
+  color: var(--pf-color-text-primary); /* Use new variable */
+  font-family: var(--pf-font-family-sans); /* Use new variable */
 }

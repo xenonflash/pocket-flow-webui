@@ -4,16 +4,18 @@
       <h3>运行/调试</h3>
       <button class="collapse-button">{{ isCollapsed ? '▶' : '▼' }}</button>
     </div>
-    <div v-if="!isCollapsed" class="panel-content">
-      <div class="log-output-section">
-        <h4>日志输出</h4>
-        <pre class="log-area">{{ logMessages.join('\n') }}</pre>
+    <transition name="slide-fade">
+      <div v-if="!isCollapsed" class="panel-content">
+        <div class="log-output-section">
+          <h4>日志输出</h4>
+          <pre class="log-area">{{ logMessages.join('\n') }}</pre>
+        </div>
+        <div class="shared-state-section">
+          <h4>共享状态</h4>
+          <pre class="shared-state-area">{{ formattedSharedState }}</pre>
+        </div>
       </div>
-      <div class="shared-state-section">
-        <h4>共享状态</h4>
-        <pre class="shared-state-area">{{ formattedSharedState }}</pre>
-      </div>
-    </div>
+    </transition>
   </div>
 </template>
 
@@ -58,99 +60,128 @@ const formattedSharedState = computed(() => {
 .execution-log-panel {
   display: flex;
   flex-direction: column;
-  /* height: 300px; */ /* Removed fixed height, will be dynamic */
-  background-color: #f0f0f0;
-  border-top: 1px solid #ccc;
-  padding: 0; /* Adjusted padding */
-  font-family: Arial, sans-serif;
-  transition: height 0.3s ease; /* Smooth transition for collapse/expand */
-}
-
-.execution-log-panel.collapsed {
-  height: 40px; /* Height when collapsed, adjust as needed */
-  overflow: hidden;
+  background-color: var(--pf-color-background-secondary);
+  border-top: 1px solid var(--pf-color-border);
+  padding: 0;
+  font-family: var(--pf-font-family-sans);
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
+  padding: var(--pf-spacing-sm) var(--pf-spacing-md);
   cursor: pointer;
-  border-bottom: 1px solid #ccc; /* Add a separator for the header */
+  border-bottom: 1px solid var(--pf-color-border);
+  background-color: var(--pf-color-background-primary);
 }
 
 .execution-log-panel.collapsed .panel-header {
-  border-bottom: none; /* No border when collapsed */
+  border-bottom: none;
 }
 
 .panel-header h3 {
   margin: 0;
-  font-size: 16px;
-  color: #333;
+  font-size: var(--pf-font-size-lg);
+  color: var(--pf-color-text-primary);
+  font-weight: var(--pf-font-weight-medium);
 }
 
 .collapse-button {
   background: none;
   border: none;
-  font-size: 16px;
+  font-size: var(--pf-font-size-md);
+  color: var(--pf-color-text-secondary);
   cursor: pointer;
+  padding: var(--pf-spacing-xs);
 }
 
 .panel-content {
   display: flex;
   flex-direction: row;
-  gap: 10px;
-  flex-grow: 1;
-  overflow: hidden;
-  padding: 10px; /* Add padding to the content area */
-  height: 260px; /* Fixed height for the content area when expanded */
+  gap: var(--pf-spacing-md);
+  overflow: hidden; /* Crucial for max-height transition */
+  padding: var(--pf-spacing-md);
+  background-color: var(--pf-color-background-secondary);
+  /* Fixed height removed, max-height in transition will control visible size */
 }
 
 .log-output-section,
 .shared-state-section {
   flex: 1;
-  background-color: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 8px;
+  background-color: var(--pf-color-background-primary);
+  border: 1px solid var(--pf-color-border);
+  border-radius: var(--pf-border-radius-md);
+  padding: var(--pf-spacing-sm);
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* For scrolling within sections */
+  overflow: hidden; /* Prevent content from breaking layout */
+  min-height: 0; /* Fix for flex item overflow in some browsers */
 }
 
 .log-output-section h4,
 .shared-state-section h4 {
   margin-top: 0;
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: #555;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 4px;
+  margin-bottom: var(--pf-spacing-sm);
+  font-size: var(--pf-font-size-md);
+  color: var(--pf-color-text-secondary);
+  border-bottom: 1px solid var(--pf-color-border-light);
+  padding-bottom: var(--pf-spacing-sm);
+  font-weight: var(--pf-font-weight-medium);
 }
 
 .log-area,
 .shared-state-area {
   flex-grow: 1;
   overflow-y: auto;
-  white-space: pre-wrap; /* Allows text to wrap */
-  word-break: break-all; /* Breaks long words/strings */
-  font-size: 12px;
-  color: #333;
-  background-color: #f9f9f9;
-  padding: 6px;
-  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: var(--pf-font-size-md); /* Increased from sm to md for better readability */
+  line-height: 1.6; /* Added for better readability */
+  color: var(--pf-color-text-primary);
+  background-color: var(--pf-color-background-secondary);
+  padding: var(--pf-spacing-sm);
+  border-radius: var(--pf-border-radius-sm);
+  font-family: var(--pf-font-family-mono);
+}
+
+/* Transition styles */
+.slide-fade-enter-active {
+  transition: max-height 0.3s ease-in-out,
+              opacity 0.3s ease-in-out,
+              transform 0.3s ease-in-out;
+}
+
+.slide-fade-leave-active {
+  transition: max-height 0.3s ease-in-out, /* Changed to ease-in-out for consistency */
+              opacity 0.3s ease-in-out,
+              transform 0.3s ease-in-out;
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(20px); /* Increased translateY for more noticeable slide */
+}
+
+.slide-fade-enter-to,
+.slide-fade-leave-from {
+  opacity: 1;
+  max-height: 300px; /* Adjust if content typically exceeds this. This is the expanded state height. */
+  transform: translateY(0);
 }
 
 /* Styling for different log levels (example) */
 .log-area .error {
-  color: red;
-  font-weight: bold;
+  color: var(--pf-color-danger); /* Use theme color */
+  font-weight: var(--pf-font-weight-bold);
 }
 .log-area .warn {
-  color: orange;
+  color: var(--pf-color-warning); /* Use theme color */
 }
 .log-area .info {
-  color: blue;
+  color: var(--pf-color-info); /* Use theme color */
+  /* Note: --pf-color-info is often the same as --pf-color-primary */
 }
 </style>
