@@ -21,16 +21,49 @@ const initialNodeRegistry: NodeRegistry = {
     label: '基础节点 (Node)',
     pocketflowClass: 'pf.Node',
     description: 'PocketFlow 中的基础同步节点。',
-    defaultParams: { name: 'node', inputs: [], outputs: [] },
+    defaultParams: { name: 'node' }, // Removed inputs/outputs from defaultParams as they are not standard params
     paramSchema: {
       name: { type: 'string', label: '名称', defaultValue: 'node', required: true, description: '节点的唯一名称。' },
-      inputs: { type: 'json', label: '输入 (Inputs)', defaultValue: [], description: '节点的输入参数名列表。' },
-      outputs: { type: 'json', label: '输出 (Outputs)', defaultValue: [], description: '节点的输出参数名列表。' },
+      // inputs: { type: 'json', label: '输入 (Inputs)', defaultValue: [], description: '节点的输入参数名列表。' }, // Example, might be handled differently
+      // outputs: { type: 'json', label: '输出 (Outputs)', defaultValue: [], description: '节点的输出参数名列表。' }, // Example, might be handled differently
+      max_retries: { type: 'number', label: '最大重试次数', defaultValue: 1, validation: { min: 0 }, description: '执行失败时的最大重试次数。' },
+      wait: { type: 'number', label: '重试等待时间 (秒)', defaultValue: 0, validation: { min: 0 }, description: '每次重试之间的等待时间。' },
     },
     icon: 'mdi-cube-outline',
     color: '#4CAF50', // Green
     category: '核心',
-    defaultSize: { width: 180, height: 100 },
+    defaultSize: { width: 200, height: 120 }, // Adjusted size
+    supportsCodeEditing: true,
+    codeBlocksDefinition: [
+      {
+        name: 'prep',
+        label: '准备脚本 (prep)',
+        language: 'python',
+        defaultCode: '# prep(self, shared_data)\n# 在 exec 之前运行，用于准备数据\n# 返回值将传递给 exec\npass',
+        description: '准备阶段执行的 Python 代码。'
+      },
+      {
+        name: 'exec',
+        label: '执行脚本 (exec)',
+        language: 'python',
+        defaultCode: '# exec(self, prep_result)\n# 核心执行逻辑\n# 返回值将传递给 post\nprint(f"Executing {self.params.get(\'name\', \'Node\')} with prep_result: {prep_result}")\nreturn prep_result',
+        description: '核心逻辑执行的 Python 代码。'
+      },
+      {
+        name: 'post',
+        label: '后处理脚本 (post)',
+        language: 'python',
+        defaultCode: '# post(self, shared_data, prep_result, exec_result)\n# 在 exec 之后运行，用于清理或处理结果\n# 返回值将作为节点的最终输出 (如果适用)\nreturn exec_result',
+        description: '后处理阶段执行的 Python 代码。'
+      },
+      {
+        name: 'exec_fallback',
+        label: '回退脚本 (exec_fallback)',
+        language: 'python',
+        defaultCode: '# exec_fallback(self, prep_result, exception)\n# 当 exec 抛出异常且所有重试都失败时运行\nprint(f"Fallback for {self.params.get(\'name\', \'Node\')} due to: {exception}")\nraise exception # 默认重新抛出异常',
+        description: '当 exec 方法失败时的回退逻辑。'
+      }
+    ],
     inputs: [
       { id: 'input_default', label: '输入', position: { side: 'top', offset: 0.5 }, description: '默认输入点' }
     ],
@@ -48,16 +81,47 @@ const initialNodeRegistry: NodeRegistry = {
     label: '异步节点 (AsyncNode)',
     pocketflowClass: 'pf.AsyncNode',
     description: 'PocketFlow 中的基础异步节点。',
-    defaultParams: { name: 'async_node', inputs: [], outputs: [] },
+    defaultParams: { name: 'async_node' },
      paramSchema: {
       name: { type: 'string', label: '名称', defaultValue: 'async_node', required: true, description: '节点的唯一名称。' },
-      inputs: { type: 'json', label: '输入 (Inputs)', defaultValue: [], description: '节点的输入参数名列表。' },
-      outputs: { type: 'json', label: '输出 (Outputs)', defaultValue: [], description: '节点的输出参数名列表。' },
+      max_retries: { type: 'number', label: '最大重试次数', defaultValue: 1, validation: { min: 0 }, description: '执行失败时的最大重试次数。' },
+      wait: { type: 'number', label: '重试等待时间 (秒)', defaultValue: 0, validation: { min: 0 }, description: '每次重试之间的等待时间。' },
     },
     icon: 'mdi-cogs',
     color: '#2196F3', // Blue
     category: '核心',
-    defaultSize: { width: 180, height: 120 },
+    defaultSize: { width: 200, height: 120 }, // Adjusted size
+    supportsCodeEditing: true,
+    codeBlocksDefinition: [
+      {
+        name: 'prep_async',
+        label: '异步准备 (prep_async)',
+        language: 'python',
+        defaultCode: '# async prep_async(self, shared_data)\n# Asynchronous preparation step\npass',
+        description: '异步准备阶段。'
+      },
+      {
+        name: 'exec_async',
+        label: '异步执行 (exec_async)',
+        language: 'python',
+        defaultCode: '# async exec_async(self, prep_result)\n# Asynchronous execution logic\nprint(f"Executing async {self.params.get(\'name\', \'AsyncNode\')} with prep_result: {prep_result}")\nreturn prep_result',
+        description: '核心异步执行逻辑。'
+      },
+      {
+        name: 'post_async',
+        label: '异步后处理 (post_async)',
+        language: 'python',
+        defaultCode: '# async post_async(self, shared_data, prep_result, exec_result)\n# Asynchronous post-processing step\nreturn exec_result',
+        description: '异步后处理阶段。'
+      },
+      {
+        name: 'exec_fallback_async',
+        label: '异步回退 (exec_fallback_async)',
+        language: 'python',
+        defaultCode: '# async exec_fallback_async(self, prep_result, exception)\n# Asynchronous fallback logic\nprint(f"Async fallback for {self.params.get(\'name\', \'AsyncNode\')} due to: {exception}")\nraise exception',
+        description: '异步执行失败时的回退逻辑。'
+      }
+    ],
     inputs: [
       { id: 'input_default', label: '输入', position: { side: 'top', offset: 0.5 }, description: '默认异步输入点' }
     ],
@@ -174,7 +238,22 @@ export const useFlowStore = defineStore('flow', () => {
       position,
       params: JSON.parse(JSON.stringify(definition.defaultParams)), // Deep copy
       size: definition.defaultSize ? { ...definition.defaultSize } : undefined,
+      // Initialize code properties if supported
+      // code: definition.supportsCodeEditing ? definition.defaultCode : undefined, - REMOVED
+      // codeLanguage: definition.supportsCodeEditing ? definition.codeLanguage : undefined, - REMOVED
+      codeBlocks: {},
     };
+
+    if (definition.supportsCodeEditing && definition.codeBlocksDefinition) {
+      newNode.codeBlocks = {}; // Ensure it\'s an object
+      for (const blockDef of definition.codeBlocksDefinition) {
+        newNode.codeBlocks[blockDef.name] = {
+          code: blockDef.defaultCode,
+          language: blockDef.language,
+        };
+      }
+    }
+
     flowState.value.nodes.push(newNode);
     setSelectedNode(newNode.id);
     recordHistory();
@@ -207,6 +286,38 @@ export const useFlowStore = defineStore('flow', () => {
     if (node) {
       node.params = { ...node.params, ...paramsToUpdate };
       recordHistory(); // Param changes are discrete, so record immediately
+    }
+  }
+
+  // function updateNodeCode(nodeId: string, newCode: string) { // OLD single code block version
+  //   const node = flowState.value.nodes.find(n => n.id === nodeId);
+  //   if (node) {
+  //     const definition = nodeRegistry.value[node.type];
+  //     if (definition?.supportsCodeEditing) {
+  //       node.code = newCode;
+  //       // Optionally, if language can be changed by user, update it here too
+  //       // node.codeLanguage = newLanguage; 
+  //       recordHistory();
+  //     } else {
+  //       console.warn(`Node ${nodeId} (type: ${node.type}) does not support code editing.`);
+  //     }
+  //   }
+  // }
+
+  function updateNodeCodeBlock(nodeId: string, blockName: string, newCode: string) {
+    const node = flowState.value.nodes.find(n => n.id === nodeId);
+    if (node && node.codeBlocks && node.codeBlocks[blockName]) {
+      const definition = nodeRegistry.value[node.type];
+      if (definition?.supportsCodeEditing && definition.codeBlocksDefinition?.find(b => b.name === blockName)) {
+        node.codeBlocks[blockName].code = newCode;
+        // Language is fixed by definition for now, but could be updatable:
+        // node.codeBlocks[blockName].language = newLanguage;
+        recordHistory();
+      } else {
+        console.warn(`Node ${nodeId} or block ${blockName} does not support code editing or definition not found.`);
+      }
+    } else {
+      console.warn(`Node ${nodeId} or code block ${blockName} not found.`);
     }
   }
 
@@ -410,13 +521,15 @@ export const useFlowStore = defineStore('flow', () => {
     setSelectedNode,
     setSelectedEdge,
     updateNodeParams,
+    // updateNodeCode, // Correctly placed here - REMOVED
+    updateNodeCodeBlock, // New function for multiple code blocks
     updateNodePosition,
     updateViewport, 
     addEdge,
     removeNode,
     removeEdge,
     finalizeNodeInteraction, 
-    updateNodeSize, // Export updateNodeSize
+    updateNodeSize, 
     // Toolbar actions
     clearCanvas,
     toggleGrid,

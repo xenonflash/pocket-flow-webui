@@ -11,31 +11,54 @@
         <span>{{ selectedNodeDefinition.label }}</span>
       </div>
 
-      <h4 v-if="formSchema.length > 0">参数</h4>
-      <FormKit
-        type="form"
-        v-model="formData"
-        :actions="false"
-        @input="handleFormInput"
-        #default="{ value }"
-      >
-        <FormKitSchema :schema="formSchema" :data="formData" />
-      </FormKit>
-       <!-- Debugging: Display form data -->
-       <!-- <pre>{{ value }}</pre> -->
+      <template v-if="formSchema.length > 0">
+        <h4>参数</h4>
+        <FormKit
+          type="form"
+          v-model="formData"
+          :actions="false"
+          @input="(newValues) => handleFormInput(newValues as FormKitGroupValue | undefined)"
+        >
+          <FormKitSchema :schema="formSchema" :data="formData" />
+        </FormKit>
+      </template>
+      
+      <!-- Code Editing Section -->
+      <div v-if="selectedNodeDefinition.supportsCodeEditing && selectedNodeDefinition.codeBlocksDefinition && selectedNodeDefinition.codeBlocksDefinition.length > 0" class="code-editing-section">
+        <h4>代码块</h4>
+        <div class="code-blocks-list">
+          <button 
+            v-for="blockDef in selectedNodeDefinition.codeBlocksDefinition"
+            :key="blockDef.name"
+            @click="openCodeEditorForBlock(blockDef.name)"
+            class="edit-code-block-button"
+          >
+            编辑 {{ blockDef.label }} ({{ blockDef.language }})
+          </button>
+        </div>
+      </div>
     </div>
     <div v-else class="no-selection">
       <p>未选择任何节点</p>
     </div>
   </div>
+
+  <CodeEditorModal
+    :show="isCodeEditorOpen"
+    :node-id="selectedNode?.id || null" 
+    :block-name="currentEditingBlockName"
+    @save="handleSaveCodeBlock"
+    @close="closeCodeEditor"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useFlowStore } from '@/stores/flow';
-import type { ParamSchemaItem, NodeDefinition } from '@/types/pocketflow-editor';
+import type { ParamSchemaItem, NodeDefinition, FlowNode } from '@/types/pocketflow-editor';
 import { FormKitSchema } from '@formkit/vue';
-import type { FormKitSchemaDefinition, FormKitNode, FormKitGroupValue } from '@formkit/core';
+import type { FormKitSchemaDefinition, FormKitNode, FormKitGroupValue, FormKitSchemaNode } from '@formkit/core';
+import CodeEditorModal from '@/components/modals/CodeEditorModal.vue';
 
 const flowStore = useFlowStore();
 
@@ -43,76 +66,90 @@ const selectedNode = computed(() => flowStore.selectedNode);
 const selectedNodeDefinition = computed(() => flowStore.selectedNodeDefinition);
 const formData = ref<Record<string, any>>({});
 
-const mapParamTypeToFormKitType = (paramType: ParamSchemaItem['type']): string => {
-  switch (paramType) {
-    case 'string':
-      return 'text';
-    case 'number':
-      return 'number';
-    case 'boolean':
-      return 'checkbox';
-    case 'select':
-      return 'select';
-    case 'textarea':
-      return 'textarea';
-    case 'json':
-      return 'textarea'; // FormKit doesn't have a built-in JSON editor, use textarea
-    default:
-      return 'text';
+const isCodeEditorOpen = ref(false);
+const currentEditingBlockName = ref<string | null>(null);
+
+function openCodeEditorForBlock(blockName: string) {
+  if (selectedNode.value && selectedNodeDefinition.value?.supportsCodeEditing) {
+    currentEditingBlockName.value = blockName;
+    isCodeEditorOpen.value = true;
+  }
+}
+
+const closeCodeEditor = () => {
+  isCodeEditorOpen.value = false;
+  currentEditingBlockName.value = null;
+};
+
+const handleSaveCodeBlock = (blockName: string, newCode: string) => {
+  if (selectedNode.value && blockName) {
+    flowStore.updateNodeCodeBlock(selectedNode.value.id, blockName, newCode);
   }
 };
 
-const formSchema = computed<FormKitSchemaDefinition[]>(() => {
+const mapParamTypeToFormKitType = (paramType: ParamSchemaItem['type']): string => {
+  switch (paramType) {
+    case 'string': return 'text';
+    case 'number': return 'number';
+    case 'boolean': return 'checkbox';
+    case 'select': return 'select';
+    case 'textarea': return 'textarea';
+    case 'json': return 'textarea'; 
+    default: return 'text';
+  }
+};
+
+const formSchema = computed<FormKitSchemaNode[]>(() => {
   if (!selectedNodeDefinition.value || !selectedNodeDefinition.value.paramSchema) {
     return [];
   }
-  const schemaRecord = selectedNodeDefinition.value.paramSchema as Record<string, ParamSchemaItem>;
+  const schemaRecord = selectedNodeDefinition.value.paramSchema;
   
-  return Object.entries(schemaRecord).map(([name, schema]) => {
-    const formKitType = mapParamTypeToFormKitType(schema.type);
-    const definition: FormKitSchemaDefinition & { help?: string, label: string, name: string, validation?: string, options?: any[], placeholder?: string, rows?: number } = {
+  return Object.entries(schemaRecord).map(([name, schemaItem]) => {
+    const formKitType = mapParamTypeToFormKitType(schemaItem.type);
+    
+    const definitionNode: FormKitSchemaNode = {
       $formkit: formKitType,
       name: name,
-      label: schema.label || name,
-      help: schema.description,
-      placeholder: schema.placeholder,
+      label: schemaItem.label || name,
+      help: schemaItem.description,
+      placeholder: schemaItem.placeholder,
     };
 
-    if (schema.validation) {
+    if (schemaItem.validation || schemaItem.required) {
       const rules: string[] = [];
-      if (schema.required) rules.push('required');
-      if (schema.validation.min !== undefined) rules.push(`min:${schema.validation.min}`);
-      if (schema.validation.max !== undefined) rules.push(`max:${schema.validation.max}`);
-      if (schema.validation.minLength !== undefined) rules.push(`length:${schema.validation.minLength},*`);
-      if (schema.validation.maxLength !== undefined) rules.push(`length:*,${schema.validation.maxLength}`);
-      if (schema.validation.pattern) rules.push(`matches:${schema.validation.pattern}`);
-      // Custom validation is not directly translatable to FormKit string rules easily.
-      // For more complex scenarios, FormKit custom validation functions would be needed.
+      if (schemaItem.required) rules.push('required');
+      if (schemaItem.validation?.min !== undefined) rules.push(`min:${schemaItem.validation.min}`);
+      if (schemaItem.validation?.max !== undefined) rules.push(`max:${schemaItem.validation.max}`);
+      if (schemaItem.validation?.minLength !== undefined) rules.push(`length:${schemaItem.validation.minLength},*`);
+      if (schemaItem.validation?.maxLength !== undefined) rules.push(`length:*,${schemaItem.validation.maxLength}`);
+      if (schemaItem.validation?.pattern) rules.push(`matches:${schemaItem.validation.pattern}`);
       if (rules.length > 0) {
-        definition.validation = rules.join('|');
+        definitionNode.validation = rules.join('|');
       }
     }
-     if (schema.type === 'select' && schema.options) {
-      definition.options = schema.options;
+    if (schemaItem.type === 'select' && schemaItem.options) {
+      definitionNode.options = schemaItem.options;
     }
-    if (schema.type === 'textarea' && schema.rows) {
-      definition.rows = schema.rows;
+    if (schemaItem.type === 'textarea' && schemaItem.rows) {
+      (definitionNode as any).rows = schemaItem.rows;
     }
-    if (schema.type === 'json') {
-      // Add a note that this should be valid JSON
-      definition.help = `${schema.description || ''} (请输入有效的 JSON)`.trim();
+    if (schemaItem.type === 'json') {
+      definitionNode.help = `${schemaItem.description || ''} (请输入有效的 JSON)`.trim();
     }
-
-    return definition;
+    return definitionNode;
   });
 });
 
 watch(selectedNode, (newNode, oldNode) => {
+  if (isCodeEditorOpen.value && (newNode?.id !== oldNode?.id || !newNode)) {
+    closeCodeEditor();
+  }
+
   if (newNode && newNode.id !== oldNode?.id) {
-    // Initialize formData when a new node is selected
     const newFormData: Record<string, any> = {};
     if (selectedNodeDefinition.value && selectedNodeDefinition.value.paramSchema) {
-      const schemaRecord = selectedNodeDefinition.value.paramSchema as Record<string, ParamSchemaItem>;
+      const schemaRecord = selectedNodeDefinition.value.paramSchema;
       for (const paramName in schemaRecord) {
         const schemaItem = schemaRecord[paramName];
         let value = newNode.params[paramName];
@@ -128,35 +165,35 @@ watch(selectedNode, (newNode, oldNode) => {
     }
     formData.value = newFormData;
   } else if (!newNode) {
-    formData.value = {}; // Clear form data if no node is selected
+    formData.value = {}; 
   }
-}, { immediate: true });
+}, { immediate: true, deep: true });
 
-
-const handleFormInput = (newValues: FormKitGroupValue | undefined, _node?: FormKitNode) => {
+const handleFormInput = (newValues: FormKitGroupValue | undefined) => {
   if (selectedNode.value && selectedNodeDefinition.value && newValues) {
     const paramsToUpdate: Record<string, any> = {};
-    const schemaRecord = selectedNodeDefinition.value.paramSchema as Record<string, ParamSchemaItem>;
+    const schemaRecord = selectedNodeDefinition.value.paramSchema;
+
+    if (!schemaRecord) return;
 
     for (const paramName in newValues) {
       const schemaItem = schemaRecord[paramName];
       if (schemaItem && schemaItem.type === 'json') {
         try {
-          // Allow empty string to clear a JSON param (becomes undefined or handled by backend)
-          const parsedValue = newValues[paramName] && (newValues[paramName] as string).trim() !== '' ? JSON.parse(newValues[paramName] as string) : undefined;
+          const rawValue = newValues[paramName];
+          const parsedValue = rawValue && typeof rawValue === 'string' && rawValue.trim() !== '' 
+                              ? JSON.parse(rawValue) 
+                              : undefined;
           paramsToUpdate[paramName] = parsedValue;
         } catch (e) {
           console.warn(`Invalid JSON for param ${paramName}:`, newValues[paramName]);
-          // Optionally, set an error state or keep the old value
-          // For now, we'll just not update this specific param if JSON is invalid
-          // Or, we can pass the raw string and let a FormKit validation rule handle it
-          paramsToUpdate[paramName] = newValues[paramName]; // Or skip update: continue;
+          paramsToUpdate[paramName] = newValues[paramName]; 
         }
       } else {
         paramsToUpdate[paramName] = newValues[paramName];
       }
     }
-    if (Object.keys(paramsToUpdate).length > 0) {
+    if (Object.keys(paramsToUpdate).length > 0 && selectedNode.value) { 
        flowStore.updateNodeParams(selectedNode.value.id, paramsToUpdate);
     }
   }
@@ -283,5 +320,48 @@ h4 {
   color: #343a40;
   border-bottom: 1px solid #e9ecef;
   padding-bottom: 8px; 
+}
+
+.code-editing-section {
+  margin-top: 10px; /* Add some space above the code editing section */
+}
+
+.code-blocks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.edit-code-block-button {
+  background-color: #007bff; /* Bootstrap primary blue */
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease-in-out;
+  width: 100%; /* Make button full width */
+  text-align: left;
+}
+
+.edit-code-block-button:hover {
+  background-color: #0056b3; /* Darker blue on hover */
+}
+
+/* Placeholder styling for the modal */
+.code-editor-modal-placeholder {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: white;
+  padding: 20px;
+  border: 1px solid #ccc;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  z-index: 1000; /* Ensure it's above other content */
+  min-width: 300px; /* Basic width */
+  text-align: center;
 }
 </style>

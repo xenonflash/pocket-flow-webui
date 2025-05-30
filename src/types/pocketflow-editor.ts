@@ -83,15 +83,30 @@ export interface NodeDefinition {
   // The 'id' in NodeOutputDefinition will be used by FlowEdge.sourceOutputId
   outputs?: NodeOutputDefinition[];
 
+  // Code editing capabilities
+  supportsCodeEditing?: boolean; // Whether this node type supports inline code editing
+  codeBlocksDefinition?: CodeBlockDefinition[]; // Defines editable code blocks for this node type
+
   // OLD outputActions - to be removed or mapped from 'outputs'
-  // outputActions: Array<{ 
-  //   id: string; 
-  //   label: string; 
+  // outputActions: Array<{
+  //   id: string;
+  //   label: string;
   //   description?: string;
   // }>;
 
   // 可选：定义节点的输入连接点 (如果需要更明确的控制)
   // inputHandles?: Array<{ id: string; label: string; description?: string; allowedSourceNodeTypes?: string[]; allowedSourceActions?: string[]; }>;
+}
+
+/**
+ * Defines a single editable code block for a node type.
+ */
+export interface CodeBlockDefinition {
+  name: string; // e.g., "exec", "prep", "post"
+  label: string; // UI label, e.g., "Execute Logic", "Preparation Script"
+  language: 'python' | 'javascript';
+  defaultCode: string;
+  description?: string;
 }
 
 /**
@@ -104,6 +119,9 @@ export interface FlowNode {
   position: { x: number; y: number }; // 节点在画布上的位置
   params: Record<string, any>; // 节点实例的参数，根据 NodeDefinition.paramSchema 初始化和编辑
 
+  // Instance-specific code (if supported by NodeDefinition and edited by user)
+  codeBlocks?: Record<string, NodeCodeBlock>; // Stores the actual code for each block, keyed by CodeBlockDefinition.name
+
   // 实例特定的视觉和尺寸
   size?: { width: number; height: number }; // 如果节点允许用户调整大小
   customVisuals?: { // 允许用户覆盖节点定义中的默认视觉效果
@@ -113,6 +131,14 @@ export interface FlowNode {
     textColor?: string;
   };
   notes?: string; // 用户为节点实例添加的备注
+}
+
+/**
+ * Represents an actual code block instance on a FlowNode.
+ */
+export interface NodeCodeBlock {
+  code: string;
+  language: 'python' | 'javascript';
 }
 
 /**
