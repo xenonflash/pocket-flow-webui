@@ -129,56 +129,34 @@ export const useFlowsManagerStore = defineStore('flowsManager', () => {
   function updateFlow(flowId: string, updates: Partial<Omit<FlowListItem, 'id' | 'createdAt'>>) {
     const flowIndex = state.value.flows.findIndex(f => f.id === flowId);
     if (flowIndex !== -1) {
-      const oldName = state.value.flows[flowIndex].name;
+      const oldFlowData = { ...state.value.flows[flowIndex] }; // Capture old data for comparison
       state.value.flows[flowIndex] = {
         ...state.value.flows[flowIndex],
         ...updates,
         updatedAt: new Date().toISOString(),
       };
       
+      // If the active flow's metadata is changed, update it in the flowStore as well
       if (state.value.activeFlowId === flowId && flowStore.flowState.id === flowId) {
+        const metadataToUpdate: { name?: string; description?: string; flowType?: string } = {};
         let metadataChanged = false;
-        if (updates.name !== undefined && flowStore.flowState.name !== updates.name) {
-            flowStore.flowState.name = updates.name;
+
+        if (updates.name !== undefined && oldFlowData.name !== updates.name) {
+            metadataToUpdate.name = updates.name;
             metadataChanged = true;
         }
-        if (updates.description !== undefined && flowStore.flowState.description !== updates.description) {
-            flowStore.flowState.description = updates.description;
+        if (updates.description !== undefined && oldFlowData.description !== updates.description) {
+            metadataToUpdate.description = updates.description;
             metadataChanged = true;
         }
-        if (updates.flowType !== undefined && flowStore.flowState.flowType !== updates.flowType) {
-            flowStore.flowState.flowType = updates.flowType;
+        if (updates.flowType !== undefined && oldFlowData.flowType !== updates.flowType) {
+            metadataToUpdate.flowType = updates.flowType;
             metadataChanged = true;
         }
 
         if (metadataChanged) {
-            // Persist these changes. Since persistFlowState is not directly exposed and we want to avoid 
-            // creating a history entry just for metadata, we might need to expose persistFlowState from flow.ts
-            // For now, if direct persistence is not available, this change will only be saved when another action triggers recordHistory.
-            // A better solution would be to have an explicit `updateFlowMetadata` in flow.ts that handles this and persists.
-            // Or, expose persistFlowState. Let's assume for now that such changes should be persisted immediately.
-            // If persistFlowState is not exposed, this line will cause an error.
-            // As a workaround, we can call recordHistory, but it might create an unwanted history step for simple metadata changes.
-            // For now, let's assume persistFlowState will be exposed or this will be handled by a dedicated action in flow.ts.
-            // If flowStore.persistFlowState is not available, this will need to be addressed in flow.ts by exposing it.
-            // For the purpose of this step, we will assume it *should* be persisted. If an error occurs, flow.ts needs adjustment.
-            
-            // Correct approach: Expose persistFlowState or add a specific action in flow.ts
-            // Temporary: If persistFlowState is not exposed, this won't work as intended without further changes to flow.ts
-            // To ensure persistence, we must call a method that internally calls persistFlowState.
-            // If we don't want a history entry, persistFlowState must be callable directly.
-            // Given the previous error, let's assume persistFlowState is NOT exposed.
-            // The safest bet without altering flow.ts's public API further is that such changes
-            // will be picked up by the next `recordHistory` call triggered by other actions.
-            // However, for immediate persistence of metadata, `flow.ts` would need to expose `persistFlowState`.
-            // Let's try to call the internal persist method if available, otherwise this is a known limitation for now.
-            if (typeof (flowStore as any).persistFlowState === 'function') {
-                 (flowStore as any).persistFlowState();
-            } else {
-                console.warn('[flowsManager] flowStore.persistFlowState is not directly available. Metadata changes might not persist immediately.');
-                // As a fallback, if other operations that call recordHistory happen, it will be saved.
-                // Or, consider adding a specific action in flow.ts for metadata updates that also persists.
-            }
+            flowStore.updateFlowMetadata(metadataToUpdate);
+            console.log(`[flowsManager] Called flowStore.updateFlowMetadata for flow ID: ${flowId}`);
         }
       }
       console.log(`[flowsManager] Flow updated: ID ${flowId}`);

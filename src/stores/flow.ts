@@ -40,6 +40,13 @@ interface FlowStateSnapshot {
   // selectedEdgeId: string | null;
 }
 
+// Add a type for metadata updates
+interface FlowMetadataUpdates {
+  name?: string;
+  description?: string;
+  flowType?: string;
+}
+
 export const useFlowStore = defineStore('flow', () => {
   const nodeRegistry = ref<NodeRegistry>(initialNodeRegistry);
 
@@ -333,6 +340,27 @@ export const useFlowStore = defineStore('flow', () => {
     // persistFlowState();
   }
 
+  // Action to update flow metadata without creating a history entry
+  function updateFlowMetadata(metadata: FlowMetadataUpdates) {
+    let changed = false;
+    if (metadata.name !== undefined && flowState.value.name !== metadata.name) {
+      flowState.value.name = metadata.name;
+      changed = true;
+    }
+    if (metadata.description !== undefined && flowState.value.description !== metadata.description) {
+      flowState.value.description = metadata.description;
+      changed = true;
+    }
+    if (metadata.flowType !== undefined && flowState.value.flowType !== metadata.flowType) {
+      flowState.value.flowType = metadata.flowType;
+      changed = true;
+    }
+
+    if (changed) {
+      persistFlowState();
+      console.log(`[flowStore] Flow metadata updated and persisted for ID: ${flowState.value.id}`);
+    }
+  }
 
   async function undo() {
     if (canUndo.value) {
@@ -528,5 +556,6 @@ export const useFlowStore = defineStore('flow', () => {
     initializeDefaultFlow, 
     getFlowDefinitionByType, 
     loadFlowState, // Expose the new action
+    updateFlowMetadata, // Expose the metadata update action
   };
 });
