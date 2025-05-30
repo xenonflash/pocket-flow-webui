@@ -8,7 +8,9 @@
       <div class="editor-container">
         <MonacoEditor
           ref="monacoEditorRef"
-          v-model="editableCode" 
+          :modelValue="editableCode"
+          @change="handleEditorChange"
+          @editor-did-mount="handleEditorDidMount" 
           :language="editorLanguage"
           :options="editorOptions"
           theme="vs-dark"
@@ -24,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed } from 'vue'; // Removed nextTick as it's no longer used in watch
 import MonacoEditor from 'monaco-editor-vue3'; // Default import
 import type { editor as MonacoEditorAPI } from 'monaco-editor'; // Import Monaco's editor API types
 import { useFlowStore } from '@/stores/flow';
@@ -49,7 +51,7 @@ const emit = defineEmits<{
 }>();
 
 const flowStore = useFlowStore();
-const editableCode = ref(''); // v-model target
+const editableCode = ref(''); // Will be updated by handleEditorChange
 const currentLanguage = ref('python');
 const currentBlockLabel = ref('代码');
 
@@ -76,7 +78,7 @@ const currentCodeBlock = computed<NodeCodeBlock | null>(() => {
   return selectedNode.value.codeBlocks?.[props.blockName] || null;
 });
 
-watch(() => [props.show, props.nodeId, props.blockName], () => {
+watch(() => [props.show, props.nodeId, props.blockName], () => { // Watch is no longer async
   console.log(`[CodeEditorModal] Watch triggered. Show: ${props.show}, NodeID: ${props.nodeId}, BlockName: ${props.blockName}`);
   if (props.show && selectedNode.value && props.blockName) {
     console.log(`[CodeEditorModal] Attempting to load code. Selected Node ID: ${selectedNode.value.id}`);
@@ -87,14 +89,15 @@ watch(() => [props.show, props.nodeId, props.blockName], () => {
     console.log(`[CodeEditorModal] Current Code Block from store:`, codeBlock ? JSON.parse(JSON.stringify(codeBlock)) : null);
     console.log(`[CodeEditorModal] Current Block Definition:`, blockDef ? JSON.parse(JSON.stringify(blockDef)) : null);
 
+    let newCodeToSet = '';
     if (codeBlock && blockDef) {
-      editableCode.value = codeBlock.code; // Initialize v-modelled editableCode
+      newCodeToSet = codeBlock.code;
       currentLanguage.value = codeBlock.language || blockDef.language;
       currentBlockLabel.value = blockDef.label;
-      console.log(`[CodeEditorModal] Editor state updated. Initial EditableCode set. Length: ${editableCode.value.length}, Language: ${currentLanguage.value}, Label: ${currentBlockLabel.value}`);
+      console.log(`[CodeEditorModal] Editor state updated. Initial EditableCode will be set. Length: ${newCodeToSet.length}, Language: ${currentLanguage.value}, Label: ${currentBlockLabel.value}`);
     } else {
       console.warn("[CodeEditorModal] Conditions not met to update editor state: currentCodeBlock or currentBlockDefinition is null/undefined.");
-      editableCode.value = `// Error: Could not load code for block '${props.blockName}'. Node ID: ${props.nodeId}`;
+      newCodeToSet = `// Error: Could not load code for block '${props.blockName}'. Node ID: ${props.nodeId}`;
       if (blockDef) {
         currentLanguage.value = blockDef.language;
         currentBlockLabel.value = blockDef.label;
@@ -102,8 +105,12 @@ watch(() => [props.show, props.nodeId, props.blockName], () => {
         currentLanguage.value = 'plaintext';
         currentBlockLabel.value = props.blockName || 'Code';
       }
-       console.log(`[CodeEditorModal] Fallback state. EditableCode: ${editableCode.value}, Language: ${currentLanguage.value}, Label: ${currentBlockLabel.value}`);
+       console.log(`[CodeEditorModal] Fallback state. EditableCode will be set to: ${newCodeToSet}, Language: ${currentLanguage.value}, Label: ${currentBlockLabel.value}`);
     }
+    
+    editableCode.value = newCodeToSet;
+    // Removed nextTick and setValue logic from here, will be handled by @editor-did-mount
+
   } else if (!props.show) {
     editableCode.value = ''; // Reset when modal is hidden
     currentLanguage.value = 'python';
@@ -125,34 +132,33 @@ const editorOptions = ref({
   // Add any other Monaco options here
 });
 
+const handleEditorDidMount = (editor: MonacoEditorAPI.IStandaloneCodeEditor) => {
+  console.log(`[CodeEditorModal] @editor-did-mount triggered.`);
+  if (editableCode.value !== editor.getValue()) {
+    console.log(`[CodeEditorModal] @editor-did-mount: Editor content ("${editor.getValue().substring(0,50)}...") differs from model ("${editableCode.value.substring(0,50)}..."). Forcing setValue.`);
+    editor.setValue(editableCode.value);
+  } else {
+    console.log(`[CodeEditorModal] @editor-did-mount: Editor content matches model. No need to force setValue.`);
+  }
+  // You might want to focus the editor here if desired
+  // editor.focus(); 
+};
+
+const handleEditorChange = (newCode: string, _event: MonacoEditorAPI.IModelContentChangedEvent) => {
+  editableCode.value = newCode;
+  console.log(`[CodeEditorModal] Editor @change event. editableCode updated. New Length: ${newCode.length}`);
+};
+
 const closeModal = () => {
   emit('close');
 };
 
 const saveCode = () => {
-  let codeToSave = editableCode.value; // Fallback to v-modelled value
-
-  if (monacoEditorRef.value && typeof monacoEditorRef.value.getEditor === 'function') {
-    const editorInstance = monacoEditorRef.value.getEditor();
-    if (editorInstance) {
-      const currentEditorCode = editorInstance.getValue();
-      codeToSave = currentEditorCode;
-      console.log(`[CodeEditorModal] Code fetched directly from editor instance via ref. Length: ${codeToSave.length}`);
-      // For debugging, you can log a snippet:
-      // console.log(`[CodeEditorModal] Fetched code (first 100 chars): ${codeToSave.substring(0, 100)}`);
-    } else {
-      console.warn('[CodeEditorModal] getEditor() did not return an instance. Falling back to v-modelled editableCode.');
-    }
-  } else {
-    console.warn('[CodeEditorModal] monacoEditorRef.value.getEditor is not a function or ref is null. Falling back to v-modelled editableCode.');
-     console.log(`[CodeEditorModal] monacoEditorRef.value:`, monacoEditorRef.value);
-  }
+  // editableCode.value is now considered the source of truth, updated by @change
+  console.log(`[CodeEditorModal] Attempting to save. Code from editableCode.value (updated by @change). Length: ${editableCode.value.length}`);
   
-  console.log(`[CodeEditorModal] v-model editableCode.value at save time. Length: ${editableCode.value.length}`);
-  console.log(`[CodeEditorModal] Final code to save. BlockName: ${props.blockName}, Length: ${codeToSave.length}`);
-
   if (props.blockName) {
-    emit('save', props.blockName, codeToSave);
+    emit('save', props.blockName, editableCode.value);
   }
   closeModal();
 };
